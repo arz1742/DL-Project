@@ -1,0 +1,15 @@
+# Ablation config 2: LSTM decoder + fine-tuned ResNet50 encoder
+# Run with: python train.py --decoder lstm \
+#             --features data/features/resnet50_finetune_features.pkl \
+#             --config_name lstm_finetuned
+
+config_name: lstm_finetuned
+decoder: lstm
+encoder_mode: finetune
+features_path: data/features/resnet50_finetune_features.pkl
+max_length: 34
+embedding_dim: 256
+units: 256
+batch_size: 64
+epochs: 30
+learning_rate: 0.001

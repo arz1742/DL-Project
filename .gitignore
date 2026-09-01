@@ -1,0 +1,33 @@
+# Data (too large / not ours to redistribute)
+data/raw/
+data/features/*.pkl
+data/processed/*.json
+
+# Model weights (too large for git)
+checkpoints/*.h5
+checkpoints/*.pt
+checkpoints/*.weights.h5
+
+# Generated outputs (recreated by running the pipeline)
+outputs/sample_captions/*.png
+outputs/*.png
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+venv/
+env/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keep folder structure with placeholder files
+!data/raw/.gitkeep
+!data/features/.gitkeep
+!data/processed/.gitkeep
+!checkpoints/.gitkeep
+!outputs/sample_captions/.gitkeep
