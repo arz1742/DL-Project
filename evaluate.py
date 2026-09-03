@@ -3,7 +3,7 @@ evaluate.py
 
 Computes BLEU-1 to BLEU-4 scores for a trained model on the test set.
 Inference itself is cheap (no training), so this runs fine on CPU —
-you can run this yourself once your friend sends back the trained weights.
+run it once a trained checkpoint is available.
 
 Usage:
     python evaluate.py --decoder lstm --features data/features/resnet50_frozen_features.pkl \

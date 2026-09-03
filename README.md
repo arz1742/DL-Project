@@ -8,6 +8,31 @@ A pretrained **ResNet50** CNN extracts visual features from an input image, whic
 [Image] → ResNet50 (frozen or fine-tuned) → feature vector → LSTM/GRU decoder → caption
 ```
 
+## Project Status
+
+This is a course project actively in progress, not a finished system.
+
+### Completed
+
+- Dataset loading and train/val/test splitting (verified on the full Flickr8k dataset — 8,091 images, 40,455 captions)
+- Vocabulary building (verified — 2,740-token vocabulary from training captions)
+- CNN feature extraction pipeline using ResNet50 (verified working with GPU acceleration on a demo-scale subset)
+- Model architecture for both LSTM and GRU decoder variants, with a shared encoder bridge (implemented and verified to build/compile correctly)
+- Training loop with automatic checkpoint save and resume support (verified — a demo training run showed loss decreasing across epochs, and checkpoints saved correctly after each epoch)
+- Inference pipeline for generating a caption on any new image, with both greedy and beam search decoding (verified working end-to-end)
+- Unit tests for the tokenizer and data loader (passing)
+
+### Pending
+
+- Full-scale training on the complete Flickr8k dataset (training has only been validated on a small subset so far, for pipeline testing — not yet run at full scale or for a full epoch count)
+- The four-way ablation study comparing LSTM vs. GRU decoders and frozen vs. fine-tuned CNN encoders (architecture supports all four configurations, but none have been trained to completion yet)
+- BLEU/METEOR evaluation on the full test set
+- Results analysis, comparison charts, and the final written report
+
+## Goal
+
+The goal of this project is to build a working CNN-LSTM/GRU image captioning system grounded in two recent mother papers, and to run a controlled ablation comparing decoder type (LSTM vs. GRU) and encoder training strategy (frozen vs. fine-tuned) — a comparison neither mother paper performs directly. The system should generate a natural-language caption for any input image end-to-end, from raw pixels through a CNN encoder to an RNN decoder. The ablation results are intended to isolate which of these two design choices matters more for caption quality on Flickr8k.
+
 ## Motivation & Literature
 
 This project is grounded in two recent papers, and directly addresses a gap neither of them isolates: a controlled, side-by-side comparison of decoder type and encoder training strategy.
@@ -60,7 +85,7 @@ data/raw/
 
 ## Pipeline — what needs a GPU and what doesn't
 
-Everything except the actual training loop runs comfortably on a CPU-only machine (tested on an i7, no GPU).
+Everything except the actual training loop runs comfortably on a CPU-only machine.
 
 | Step | Command | Needs GPU? |
 |---|---|---|
@@ -72,7 +97,7 @@ Everything except the actual training loop runs comfortably on a CPU-only machin
 | 6. Evaluate (BLEU) | `python evaluate.py --decoder lstm --features ... --config_name lstm_frozen --checkpoint_epoch 29` | No |
 | 7. Caption any new image | `python inference.py --image your_photo.jpg --decoder lstm --config_name lstm_frozen --checkpoint_epoch 29` | No |
 
-Step 5 is the only GPU-bound step — it's designed to be handed off (e.g., run on a friend's GPU machine) as a standalone script, and supports **pause/resume**: if training is interrupted, re-running the same command automatically resumes from the last saved epoch instead of restarting.
+Step 5 is the only GPU-bound step — it's designed to be handed off as a standalone script and can be run on any available CUDA-capable machine (a local GPU, a lab machine, or a cloud GPU runtime such as Google Colab), and supports **pause/resume**: if training is interrupted, re-running the same command automatically resumes from the last saved epoch instead of restarting.
 
 ## Ablation Configurations
 
