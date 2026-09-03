@@ -44,7 +44,7 @@ def beam_search_decode(
             padded = np.array(padded[:max_length]).reshape(1, -1)
 
             preds = model.predict([feature_batch, padded], verbose=0)[0]
-            next_token_probs = preds
+            next_token_probs = preds[len(sequence) - 1]
 
             top_k_ids = np.argsort(next_token_probs)[-beam_width:]
             for token_id in top_k_ids:
@@ -77,7 +77,7 @@ def greedy_decode(model, feature_vector: np.ndarray, tokenizer, max_length: int)
         padded = np.array(padded[:max_length]).reshape(1, -1)
 
         preds = model.predict([feature_batch, padded], verbose=0)[0]
-        next_token_id = int(np.argmax(preds))
+        next_token_id = int(np.argmax(preds[len(sequence) - 1]))
         sequence.append(next_token_id)
 
         if next_token_id == end_id:

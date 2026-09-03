@@ -22,7 +22,7 @@ def build_gru_decoder(
     x = layers.Dropout(0.5)(x)
 
     # GRU only needs a single initial state (no separate cell state, unlike LSTM)
-    gru_out = layers.GRU(gru_units, return_sequences=False, name="gru_decoder")(
+    gru_out = layers.GRU(gru_units, return_sequences=True, name="gru_decoder")(
         x, initial_state=feature_input
     )
     gru_out = layers.Dropout(0.5)(gru_out)

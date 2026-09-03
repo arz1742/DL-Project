@@ -84,8 +84,6 @@ def main():
     parser.add_argument("--image_dir", default="data/raw/Images")
     parser.add_argument("--processed_dir", default="data/processed")
     parser.add_argument("--out_dir", default="data/features")
-    parser.add_argument("--limit", type=int, default=None,
-                         help="Optional: only process the first N images (fast demo/testing mode).")
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -99,10 +97,6 @@ def main():
             )
         with open(split_path, "r") as f:
             all_filenames.extend(json.load(f).keys())
-
-    if args.limit is not None:
-        all_filenames = all_filenames[:args.limit]
-        print(f"[demo mode] Limiting to first {args.limit} images for a fast partial run")
 
     print(f"Extracting features for {len(all_filenames)} images (mode={args.mode})")
     features = extract_features(
