@@ -25,7 +25,7 @@ def build_lstm_decoder(
 
     # Use image feature as the initial hidden/cell state of the LSTM
     initial_state = [feature_input, feature_input]
-    lstm_out = layers.LSTM(lstm_units, return_sequences=False, name="lstm_decoder")(
+    lstm_out = layers.LSTM(lstm_units, return_sequences=True, name="lstm_decoder")(
         x, initial_state=initial_state
     )
     lstm_out = layers.Dropout(0.5)(lstm_out)

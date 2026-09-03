@@ -62,12 +62,9 @@ def build_training_arrays(features, captions, tokenizer, max_length):
                 X_sequences.append(encoded[:t] + [tokenizer.word2idx["<pad>"]] * (max_length - t))
                 y_targets.append(encoded[t])
 
-    if len(X_features) == 0:
-        return None, None, None
-
     return (
-        np.stack(X_features).astype(np.float32),
-        np.stack(X_sequences).astype(np.int32),
+        np.array(X_features, dtype=np.float32),
+        np.array(X_sequences, dtype=np.int32),
         np.array(y_targets, dtype=np.int32),
     )
 
@@ -106,14 +103,7 @@ def main():
     X_feat_val, X_seq_val, y_val = build_training_arrays(
         val_features, val_captions, tokenizer, args.max_length
     )
-    print(f"Train examples: {len(y_train)} | "
-          f"Val examples: {0 if y_val is None else len(y_val)}")
-
-    if X_feat_val is not None:
-        validation_data = ([X_feat_val, X_seq_val], y_val)
-    else:
-        validation_data = None
-        print("No validation examples in this subset — skipping validation.")
+    print(f"Train examples: {len(y_train)} | Val examples: {len(y_val)}")
 
     # --- Build model ---
     model = build_caption_model(
@@ -139,15 +129,12 @@ def main():
         print(f"\n--- Epoch {epoch + 1}/{args.epochs} ---")
         result = model.fit(
             [X_feat_train, X_seq_train], y_train,
-            validation_data=validation_data,
+            validation_data=([X_feat_val, X_seq_val], y_val),
             batch_size=args.batch_size,
             epochs=1,
             verbose=1,
         )
-        metric_keys = ["loss", "accuracy"]
-        if validation_data is not None:
-            metric_keys += ["val_loss", "val_accuracy"]
-        for key in metric_keys:
+        for key in ["loss", "accuracy", "val_loss", "val_accuracy"]:
             history.setdefault(key, []).append(float(result.history[key][0]))
 
         ckpt_mgr.save(model, epoch, history)
