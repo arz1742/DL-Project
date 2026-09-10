@@ -1,199 +1,136 @@
+```markdown
 # 🖼️ Image Captioning with CNN–LSTM/GRU
 
 <p align="center">
-  <b>Teaching a machine to look at a photo and describe it in a sentence.</b><br>
-  A CNN–RNN hybrid deep learning project · Deep Learning Course (702AI0C008) · SVKM's NMIMS, MPSTME · AY 2026–27
+  <b>A deep learning system that looks at a photo and writes a sentence describing it.</b><br>
+  Deep Learning Course (702AI0C008) · SVKM's NMIMS, MPSTME · AY 2026–27
 </p>
 
 <p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10-blue?logo=python&logoColor=white">
   <img alt="TensorFlow" src="https://img.shields.io/badge/TensorFlow-2.x-orange?logo=tensorflow&logoColor=white">
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-green">
   <img alt="Status" src="https://img.shields.io/badge/Status-In%20Progress-yellow">
 </p>
 
 ---
 
-## 📖 Overview
+## 🤔 What Is This Project?
 
-**Image captioning** sits at the intersection of two of the hardest problems in AI: *understanding what's in an image* (computer vision) and *describing it in fluent language* (natural language generation). This project builds a complete, working system that does exactly that — give it any photo, and it generates a natural-language sentence describing what's happening in it.
+Imagine showing a computer a photo of a dog running in a park — and it writes back, in plain English: *"a brown dog running through the grass."* That's **image captioning** — teaching a machine to both *see* an image and *describe* it in a full sentence, not just label it.
+
+This project builds that system from scratch, combining two types of neural networks:
 
 ```
-🖼️  Image  →  🧠 ResNet50 (CNN Encoder)  →  📐 2048-d feature vector  →  🔤 LSTM / GRU Decoder  →  💬 "a brown dog running through the grass"
+🖼️  A photo goes in
+     ↓
+🧠  A CNN (ResNet50) looks at it and extracts what's visually important
+     ↓
+🔤  An RNN (LSTM or GRU) turns that visual information into a sentence, one word at a time
+     ↓
+💬  "a brown dog running through the grass"
 ```
 
-A pretrained **ResNet50** convolutional network looks at the image and compresses it into a rich numerical representation. That representation is then handed to a **recurrent decoder — either an LSTM or a GRU** — which generates the caption one word at a time, learning to connect visual patterns to language.
+**Why this project is more than a copy-paste tutorial:** most image captioning demos stop at "build one model, see if it works." This project instead runs a **controlled experiment** — training **4 different versions** of the same system, changing one design choice at a time, to actually measure what matters:
 
-What makes this more than a tutorial rebuild: the project runs a **controlled ablation study**, systematically comparing:
-- 🔁 **LSTM vs. GRU** as the decoder
-- ❄️ **Frozen vs. fine-tuned** CNN encoder
+1. Does an **LSTM** or a **GRU** make a better decoder?
+2. Does **fine-tuning** the CNN (letting it adapt during training) actually help, or is a plain pretrained CNN good enough?
 
-...under otherwise identical conditions — a direct, isolated comparison that **neither of the two mother papers this project is grounded in actually performs.**
+This 2×2 comparison — LSTM/GRU × frozen/fine-tuned — is something neither of the two research papers this project is based on actually tests directly. That comparison is this project's real contribution.
 
 ---
 
-## 📊 Project Status
+## 📊 Where Things Stand Right Now
 
-> This is an **active, in-progress course project**. Here's exactly what's real and working right now, and what's still ahead.
+### ✅ Fully Done
+- **Dataset pipeline** — Flickr8k (8,091 images, 40,455 captions) loaded, cleaned, and split into train/val/test
+- **Vocabulary** — 2,740-word vocabulary built from training captions
+- **Config 1: LSTM + Frozen CNN** — ✅ **trained for the full 30 epochs and evaluated**
 
-### ✅ Completed & Verified
+  | Metric | Result |
+  |---|---|
+  | Final training accuracy | 44.5% |
+  | Final validation accuracy | 44.3% (no overfitting — train/val nearly identical) |
+  | BLEU-1 | **0.4846** |
+  | BLEU-2 | 0.2866 |
+  | BLEU-3 | 0.1892 |
+  | BLEU-4 | 0.1286 |
 
-| Component | Status |
+  **Real example output** from this model:
+  > 🖼️ *(a photo of a black-and-white dog on grass)*
+  > **Predicted:** "a black and white dog is running on the grass"
+  > **Reference (human-written):** "a dog jumps off a wooden porch"
+
+  The captions are grammatically correct and often get the right general subject (dog, grass) — sometimes the exact action/scene doesn't match, which is expected at this stage and matches known limitations described in both source papers.
+
+### 🔄 Currently Running
+- **Config 2: LSTM + Fine-tuned CNN** — actively training (true end-to-end fine-tuning, where the CNN itself adjusts during training, not just the decoder)
+  - Currently past epoch 8/30
+  - Loss steadily decreasing every epoch (5.03 → 4.17 and still dropping)
+  - Validation accuracy tracking slightly *above* training accuracy — a good sign of healthy generalization, no overfitting
+  - Training across multiple sessions using automatic checkpoint save/resume, so no progress is ever lost between sessions
+
+### ⏳ Not Started Yet
+- **Config 3: GRU + Frozen CNN**
+- **Config 4: GRU + Fine-tuned CNN**
+- Final BLEU comparison across all 4 configs
+- Written results analysis and report
+
+---
+
+## 🎯 The Goal
+
+Build a working CNN + LSTM/GRU image captioning system grounded in two recent research papers, then go one step further than either paper does: directly and fairly compare **LSTM vs. GRU** and **frozen vs. fine-tuned CNN** — under identical conditions, on the same data. Whichever way the results land, that's a real, defensible finding neither source paper provides on its own.
+
+---
+
+## 📚 Built On
+
+| Paper | What It Did |
 |---|---|
-| Dataset loading & train/val/test split | ✅ Verified on full Flickr8k — **8,091 images, 40,455 captions** |
-| Vocabulary construction | ✅ Verified — **2,740-token vocabulary** |
-| ResNet50 feature extraction (GPU-accelerated) | ✅ Verified working on a demo-scale run |
-| LSTM & GRU decoder architectures | ✅ Implemented, builds & compiles correctly |
-| Training loop with checkpoint save/resume | ✅ Verified — loss decreases correctly across epochs, checkpoints persist correctly |
-| End-to-end inference (image → caption) | ✅ Verified working, both greedy & beam search decoding |
-| Unit tests (tokenizer, data loader) | ✅ All passing |
+| **Ahmad, Azhar & Sattar (2023)** — CNN+GRU with semantic reconstructor ([arXiv:2301.02440](https://arxiv.org/abs/2301.02440)) | GRU decoder + a module that reconstructs the image from the caption, to improve semantic accuracy |
+| **Kavitha & Karpagam (2025)** — ResNet50 + Hybrid LSTM–GRU + Beam Search ([Automatika](https://doi.org/10.1080/00051144.2025.2485695)) | Compared multiple CNNs, then combined LSTM+GRU into one hybrid decoder with beam search, on Flickr8k |
 
-### ⏳ Pending
-
-- 🔲 Full-scale training on the **complete** Flickr8k dataset (validated so far only on a small demo subset)
-- 🔲 The full **4-way ablation study** (LSTM/GRU × frozen/fine-tuned) trained to completion
-- 🔲 BLEU / METEOR evaluation across the full test set
-- 🔲 Final results analysis, comparison charts, and written report
+📄 Full write-up: [`docs/literature_review.md`](docs/literature_review.md) · [`docs/proposal.pdf`](docs/proposal.pdf)
 
 ---
 
-## 🎯 Goal
-
-Build a working CNN–LSTM/GRU image captioning system grounded in recent literature, then go one step further than either mother paper does: run a **controlled ablation** isolating decoder type and encoder training strategy as independent variables. Neither reference paper runs this specific comparison — this project's contribution is turning *"Paper A did X, Paper B did Y"* into a direct, measured **X vs. Y**, on the same data, under the same conditions.
-
----
-
-## 📚 Grounded in Recent Literature
-
-| 📄 Paper | 💡 Contribution | 🔍 Gap this project addresses |
-|---|---|---|
-| **Ahmad, Azhar & Sattar (2023)**<br>*CNN+GRU with semantic reconstructor*<br>[arXiv:2301.02440](https://arxiv.org/abs/2301.02440) | GRU decoder + attribute vector + caption-to-image semantic reconstructor, evaluated on MS COCO | Doesn't isolate GRU's own contribution from the reconstructor module |
-| **Kavitha & Karpagam (2025)**<br>*ResNet50 + Hybrid LSTM–GRU + Beam Search*<br>[Automatika, DOI](https://doi.org/10.1080/00051144.2025.2485695) | Systematic CNN encoder comparison + hybrid LSTM-GRU decoder + beam search, on Flickr8k | Doesn't test LSTM-only vs. GRU-only as a controlled standalone comparison |
-
-📄 **Full literature review:** [`docs/literature_review.md`](docs/literature_review.md)
-📄 **Project proposal:** [`docs/proposal.pdf`](docs/proposal.pdf)
-
----
-
-## 🏗️ Architecture
-
-```
-                     ┌─────────────────────┐
-    Input Image ───▶ │   ResNet50 Encoder   │ ───▶  2048-d feature vector
-                     │  (frozen/fine-tuned) │
-                     └─────────────────────┘
-                                │
-                                ▼
-                     ┌─────────────────────┐
-                     │   Dense Bridge Layer │  ───▶  256-d embedding
-                     └─────────────────────┘
-                                │
-                                ▼
-                     ┌─────────────────────┐
-                     │  LSTM / GRU Decoder  │  ───▶  word-by-word generation
-                     └─────────────────────┘
-                                │
-                                ▼
-                     ┌─────────────────────┐
-                     │   Softmax over vocab │  ───▶  "a", "dog", "runs", ...
-                     └─────────────────────┘
-```
-
----
-
-## 🗂️ Repository Structure
+## 🗂️ Project Structure
 
 ```
 DL-Project/
-├── 📁 docs/                       Proposal, literature review, GPU handoff guide
-├── 📁 data/
-│   ├── raw/                       Flickr8k images + captions.txt  (not committed — see Setup)
-│   ├── processed/                  Train/val/test splits + tokenizer  (generated)
-│   └── features/                    Precomputed ResNet50 feature vectors  (generated)
-├── 📁 src/
-│   ├── data_loader.py              Parses & splits the Flickr8k dataset
-│   ├── tokenizer.py                 Vocabulary building, caption encode/decode
-│   ├── feature_extraction.py         CNN feature extraction (CPU-friendly)
-│   ├── models/                        Encoder bridge · LSTM decoder · GRU decoder · combined model
-│   └── utils/                          Checkpoint save/resume · beam search decoding
-├── build_tokenizer.py               Builds vocabulary from training captions
-├── train.py                          🔥 Training loop — the one GPU-bound step
-├── evaluate.py                        BLEU evaluation on the test set
-├── inference.py                        Generate a caption for any image
-├── 📁 experiments/                       YAML configs for each ablation run + results
-├── 📁 notebooks/                          Step-by-step exploratory notebooks
-├── 📁 outputs/                             Sample captions, comparison charts
-└── 📁 tests/                                Unit tests
+├── src/                  Core code: data loading, tokenizer, CNN feature extraction, model architectures
+├── train.py                Trains the FROZEN-CNN configs (fast — CNN features precomputed once)
+├── train_finetune.py        Trains the FINE-TUNED-CNN configs (slower — CNN learns too, in real time)
+├── evaluate.py                Scores a trained model using BLEU
+├── inference.py                 Generate a caption for any image you give it
+├── experiments/                  One config file per ablation run (LSTM/GRU × frozen/fine-tuned)
+├── docs/                           Proposal, literature review
+└── tests/                           Automated checks for the core code
 ```
 
 ---
 
-## ⚙️ Setup
+## 🧪 The Four-Way Comparison
 
-```bash
-git clone https://github.com/arz1742/DL-Project.git
-cd DL-Project
-pip install -r requirements.txt
-```
-
-Download **Flickr8k** (e.g. from Kaggle) and place it as:
-```
-data/raw/
-├── Images/          ← all .jpg files
-└── captions.txt
-```
+| Config | Decoder | CNN Encoder | Status |
+|---|:---:|:---:|:---:|
+| `lstm_frozen` | LSTM | Frozen | ✅ Done — BLEU-1: 0.4846 |
+| `lstm_finetuned` | LSTM | Fine-tuned | 🔄 Training (epoch 8+/30) |
+| `gru_frozen` | GRU | Frozen | ⏳ Pending |
+| `gru_finetuned` | GRU | Fine-tuned | ⏳ Pending |
 
 ---
 
-## 🚀 Running the Pipeline
+## 🔭 What's Next
 
-Everything except training runs comfortably on a **CPU-only machine** — no GPU required until step 5.
-
-| Step | Command | GPU? |
-|:---:|---|:---:|
-| 1️⃣ | `python src/data_loader.py` — split the dataset | ❌ |
-| 2️⃣ | `python build_tokenizer.py` — build vocabulary | ❌ |
-| 3️⃣ | `python src/feature_extraction.py --mode frozen` — extract CNN features | ❌ |
-| 4️⃣ | `python src/feature_extraction.py --mode finetune` — tag features for fine-tuning | ❌ |
-| 5️⃣ | `python train.py --decoder lstm --features data/features/resnet50_frozen_features.pkl --config_name lstm_frozen` — **train** (×4 configs, see `experiments/`) | ✅ |
-| 6️⃣ | `python evaluate.py --decoder lstm --config_name lstm_frozen --checkpoint_epoch 29` — BLEU score | ❌ |
-| 7️⃣ | `python inference.py --image your_photo.jpg --decoder lstm --config_name lstm_frozen --checkpoint_epoch 29` — caption any image | ❌ |
-
-> 💡 **Tip:** add `--limit N` to `feature_extraction.py` to run a fast partial pipeline on just N images — great for quick demos or sanity checks before a full run.
-
-Training (step 5️⃣) is the only GPU-bound stage, and can run on **any CUDA-capable machine** — a local GPU, a lab machine, or a cloud GPU runtime like Google Colab. It supports **automatic pause/resume**: an interrupted run picks up exactly where it left off, no progress lost.
-
----
-
-## 🧪 The Ablation Study
-
-| Config | Decoder | Encoder | Config File |
-|---|:---:|:---:|---|
-| `lstm_frozen` | LSTM | ResNet50 (frozen) | [`config_lstm_frozen.yaml`](experiments/config_lstm_frozen.yaml) |
-| `lstm_finetuned` | LSTM | ResNet50 (fine-tuned) | [`config_lstm_finetuned.yaml`](experiments/config_lstm_finetuned.yaml) |
-| `gru_frozen` | GRU | ResNet50 (frozen) | [`config_gru_frozen.yaml`](experiments/config_gru_frozen.yaml) |
-| `gru_finetuned` | GRU | ResNet50 (fine-tuned) | [`config_gru_finetuned.yaml`](experiments/config_gru_finetuned.yaml) |
-
-Results (BLEU-1 → BLEU-4, loss/accuracy curves) land in `experiments/results/` once training and evaluation are run — not pre-populated with placeholder numbers.
-
----
-
-## ✅ Testing
-
-```bash
-pytest tests/
-```
-
-Covers tokenizer round-tripping, vocabulary frequency filtering, and dataset split logic — all runnable instantly, no dataset or GPU needed.
-
----
-
-## 🔭 Future Work
-
-**Attention mechanisms** and **Transformer-based architectures** (e.g., *Show, Attend and Tell*) are deliberately out of scope here — they sit outside the CNN/RNN/LSTM/GRU fundamentals this project is built around. Flagged here as a clear next step, not an oversight.
+1. Finish training `lstm_finetuned`
+2. Train `gru_frozen` and `gru_finetuned`
+3. Run BLEU evaluation on all 4, compare them side by side
+4. Write up the findings — which decoder wins, whether fine-tuning was worth the extra compute cost
 
 ---
 
 ## 🙏 Acknowledgements
 
 Built for the **Deep Learning** course at **SVKM's NMIMS — Mukesh Patel School of Technology Management & Engineering**.
+```
