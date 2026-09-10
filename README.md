@@ -1,4 +1,4 @@
-```markdown
+
 # 🖼️ Image Captioning with CNN–LSTM/GRU
 
 <p align="center">
@@ -133,4 +133,4 @@ DL-Project/
 ## 🙏 Acknowledgements
 
 Built for the **Deep Learning** course at **SVKM's NMIMS — Mukesh Patel School of Technology Management & Engineering**.
-```
+
