@@ -1,70 +1,65 @@
 """
 inference.py
 
-Generate a caption for ANY single image (not just dataset images) using a
-trained model. This is the "give it any image, get a caption back" step —
-cheap enough to run on your own CPU once you have the trained weights.
+Caption ANY image with a trained run (runs fine on a CPU).
 
-Usage:
-    python inference.py --image path/to/your_photo.jpg \
-                         --decoder lstm --config_name lstm_frozen --checkpoint_epoch 29
+    python inference.py --image photo.jpg --config_name hybrid_frozen --seed 1
+    python inference.py --image photo.jpg --config_name hybrid_frozen --seed 1 --beam_width 1   # greedy
+    python inference.py --image photo.jpg --config_name hybrid_frozen --seed 1 --show_probs
 """
 
+import os
+import sys
 import argparse
+
 import numpy as np
-from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
-from tensorflow.keras.preprocessing import image as keras_image
 
-from src.tokenizer import CaptionTokenizer
-from src.models.caption_model import build_caption_model
-from src.utils.beam_search import beam_search_decode, greedy_decode
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
+from src.tokenizer import CaptionTokenizer  # noqa: E402
+from src.utils.run_io import run_dir, load_trained_model  # noqa: E402
+from src.utils.beam_search import CaptionGenerator  # noqa: E402
+from src.feature_extraction import build_resnet50_extractor, load_and_preprocess  # noqa: E402
 
 
-def extract_single_image_feature(image_path: str, target_size=(224, 224)) -> np.ndarray:
-    encoder = ResNet50(weights="imagenet", include_top=False, pooling="avg")
-    img = keras_image.load_img(image_path, target_size=target_size)
-    img_array = keras_image.img_to_array(img)
-    img_array = np.expand_dims(img_array, axis=0)
-    img_array = preprocess_input(img_array)
-    return encoder.predict(img_array, verbose=0).squeeze()
+class Captioner:
+    """Loads a trained run once; captions any number of images."""
+
+    def __init__(self, rdir: str, processed_dir: str = "data/processed"):
+        self.tokenizer = CaptionTokenizer.load(os.path.join(processed_dir, "tokenizer.json"))
+        self.model, self.cfg = load_trained_model(rdir, self.tokenizer.vocab_size, processed_dir)
+        mode = "pooled" if self.cfg["encoder_mode"] == "frozen" else "conv4"
+        self.extractor = build_resnet50_extractor(mode)
+        self.gen = CaptionGenerator(self.model, self.tokenizer, self.cfg["max_length"])
+
+    def state(self, image_path: str) -> np.ndarray:
+        feat = self.extractor.predict_on_batch(load_and_preprocess(image_path)[None])
+        return self.gen.encode_images(feat)[0]
+
+    def caption(self, image_path: str, beam_width: int = 5) -> str:
+        s = self.state(image_path)[None]
+        return self.gen.greedy(s)[0] if beam_width == 1 else self.gen.beam(s, beam_width)[0]
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate a caption for a single image.")
-    parser.add_argument("--image", required=True, help="Path to any image file (.jpg/.png)")
-    parser.add_argument("--decoder", choices=["lstm", "gru"], required=True)
-    parser.add_argument("--config_name", required=True)
-    parser.add_argument("--checkpoint_epoch", type=int, required=True)
-    parser.add_argument("--checkpoint_dir", default="checkpoints")
-    parser.add_argument("--tokenizer_path", default="data/processed/tokenizer.json")
-    parser.add_argument("--max_length", type=int, default=34)
-    parser.add_argument("--embedding_dim", type=int, default=256)
-    parser.add_argument("--units", type=int, default=256)
-    parser.add_argument("--decoding", choices=["beam", "greedy"], default="beam")
-    parser.add_argument("--beam_width", type=int, default=5)
-    args = parser.parse_args()
+    p = argparse.ArgumentParser(description="Generate a caption for one image.")
+    p.add_argument("--image", required=True)
+    p.add_argument("--config_name", required=True)
+    p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--runs_dir", default="runs")
+    p.add_argument("--processed_dir", default="data/processed")
+    p.add_argument("--beam_width", type=int, default=5)
+    p.add_argument("--show_probs", action="store_true", help="Top-5 candidate words at each step.")
+    args = p.parse_args()
 
-    tokenizer = CaptionTokenizer.load(args.tokenizer_path)
-
-    model = build_caption_model(
-        vocab_size=tokenizer.vocab_size,
-        max_length=args.max_length,
-        decoder_type=args.decoder,
-        embedding_dim=args.embedding_dim,
-        units=args.units,
-    )
-    weights_path = f"{args.checkpoint_dir}/{args.config_name}_epoch{args.checkpoint_epoch}.weights.h5"
-    model.load_weights(weights_path)
-
-    print(f"Extracting features for {args.image}...")
-    feature_vector = extract_single_image_feature(args.image)
-
-    if args.decoding == "beam":
-        caption = beam_search_decode(model, feature_vector, tokenizer, args.max_length, args.beam_width)
-    else:
-        caption = greedy_decode(model, feature_vector, tokenizer, args.max_length)
-
-    print(f"\nGenerated caption ({args.decoding} search): \"{caption}\"")
+    c = Captioner(run_dir(args.runs_dir, args.config_name, args.seed), args.processed_dir)
+    cap = c.caption(args.image, args.beam_width)
+    method = "greedy" if args.beam_width == 1 else f"beam k={args.beam_width}"
+    print(f'\nCaption ({method}): "{cap}"')
+    if args.show_probs:
+        for step in c.gen.word_probabilities(c.state(args.image), cap):
+            alts = ", ".join(f"{w} {p:.2f}" for w, p in step["top"])
+            print(f"  {step['word']:>12s}  p={step['prob']:.2f}   top-5: {alts}")
 
 
 if __name__ == "__main__":

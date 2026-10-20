@@ -15,4 +15,5 @@ dependencies:
       - Pillow>=10.0.0
       - scikit-learn>=1.3.0
       - pyyaml>=6.0
+      - pycocoevalcap>=1.2
       - pytest>=7.4.0

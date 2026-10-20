@@ -1,20 +1,65 @@
 """
 src/models/encoder.py
 
-Thin wrapper around the ResNet50 encoder, plus the "bridge" dense layer
-that projects the 2048-d CNN feature into the decoder's embedding space.
+Image side of the captioning model.
+
+  frozen   : input = precomputed pooled ResNet50 vector (2048,)
+             -> bridge (Dense + dropout) -> decoder initial state
+  finetune : input = precomputed ResNet50 stage-4 map (14, 14, 1024)
+             -> ResNet50 conv5 block (TRAINABLE, ImageNet-initialised)
+             -> global average pool (2048,) -> bridge -> decoder initial state
+
+Both paths produce the same 2048-d vector before the bridge, so a model
+trained with the frozen encoder can be loaded straight into the fine-tune
+model and training continues from there (two-stage fine-tuning).
 """
 
-from tensorflow.keras import layers, Model
+import keras
+from keras import layers
+
+CONV4_LAYER = "conv4_block6_out"
 
 
-def build_bridge_layer(embedding_dim: int, feature_dim: int = 2048) -> Model:
+def build_bridge_layer(units: int, feature_dim: int = 2048, dropout: float = 0.5) -> keras.Model:
+    """Projects the 2048-d CNN vector to the decoder's hidden size."""
+    feature_input = keras.Input(shape=(feature_dim,), name="cnn_feature_input")
+    x = layers.Dense(units, activation="relu", name="bridge_dense")(feature_input)
+    x = layers.Dropout(dropout, name="bridge_dropout")(x)
+    return keras.Model(feature_input, x, name="encoder_bridge")
+
+
+def build_conv5_head(weights: str | None = "imagenet") -> keras.Model:
     """
-    Projects a precomputed ResNet50 feature vector (2048-d) down to the
-    decoder's embedding dimension, and applies it as the initial hidden
-    state — mirroring the Show & Tell / LRCN encoder-decoder bridge.
+    ResNet50's last block (conv5_x) + global average pooling, as a standalone
+    model taking the stage-4 map (14, 14, 1024) and returning (2048,).
+    Weights come from ImageNet. BatchNorm layers stay frozen (standard practice
+    when fine-tuning with small batches); conv kernels are trainable.
     """
-    feature_input = layers.Input(shape=(feature_dim,), name="cnn_feature_input")
-    x = layers.Dense(embedding_dim, activation="relu", name="bridge_dense")(feature_input)
-    x = layers.Dropout(0.5, name="bridge_dropout")(x)
-    return Model(inputs=feature_input, outputs=x, name="encoder_bridge")
+    from keras.applications.resnet50 import ResNet50
+
+    full = ResNet50(weights=weights, include_top=False, pooling="avg",
+                    input_shape=(224, 224, 3))
+    head = keras.Model(full.get_layer(CONV4_LAYER).output, full.output, name="resnet50_conv5")
+    head.trainable = True
+    for layer in head.layers:
+        if isinstance(layer, layers.BatchNormalization):
+            layer.trainable = False
+    return head
+
+
+def build_image_encoder(encoder_mode: str, units: int, dropout: float = 0.5,
+                        cnn_weights: str | None = "imagenet") -> keras.Model:
+    """Image input -> decoder initial state vector of size `units`."""
+    bridge = build_bridge_layer(units, dropout=dropout)
+    if encoder_mode == "frozen":
+        img = keras.Input(shape=(2048,), name="image_input")
+        state = bridge(img)
+    elif encoder_mode == "finetune":
+        img = keras.Input(shape=(14, 14, 1024), name="image_input")
+        # training=False keeps BatchNorm on its ImageNet statistics;
+        # gradients still flow into the conv kernels.
+        pooled = build_conv5_head(cnn_weights)(img, training=False)
+        state = bridge(pooled)
+    else:
+        raise ValueError(f"Unknown encoder_mode {encoder_mode!r} (expected 'frozen' or 'finetune')")
+    return keras.Model(img, state, name="image_encoder")
