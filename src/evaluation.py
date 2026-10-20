@@ -74,23 +74,61 @@ def coco_scores(refs: dict, hyps: dict, use_meteor: bool = True) -> dict:
     return out
 
 
-def meteor(gts: dict, res: dict) -> dict:
-    """Official METEOR 1.5 (needs Java); falls back to NLTK's METEOR."""
-    try:
-        from pycocoevalcap.meteor.meteor import Meteor
-        return {"meteor": float(Meteor().compute_score(gts, res)[0]), "meteor_impl": "coco-java"}
-    except Exception as e:  # Java missing or the jar failed
-        print(f"[meteor] official scorer unavailable ({type(e).__name__}); using NLTK METEOR")
-    try:
-        import nltk
-        from nltk.translate.meteor_score import meteor_score
-        for pkg in ["wordnet", "omw-1.4"]:
-            nltk.download(pkg, quiet=True)
-        vals = [meteor_score([r.split() for r in gts[k]], res[k][0].split()) for k in gts]
-        return {"meteor": float(np.mean(vals)), "meteor_impl": "nltk"}
-    except Exception as e:
-        print(f"[meteor] skipped: {e}")
+_METEOR_BROKEN = None  # set to the error message after the first failure
+
+
+def meteor(gts: dict, res: dict, timeout: int = 900) -> dict:
+    """
+    Official METEOR 1.5 (the jar bundled with pycocoevalcap; needs Java).
+
+    Runs the jar directly on temporary files with a time limit instead of
+    using pycocoevalcap's Meteor class, whose lock deadlocks forever if the
+    Java process returns anything unexpected. Gives the identical score.
+
+    If it fails, METEOR is skipped (not replaced by a different
+    implementation, which would make runs incomparable); it can be
+    recomputed later from predictions.csv with scripts/rescore_meteor.py.
+    """
+    global _METEOR_BROKEN
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+
+    if _METEOR_BROKEN:
         return {}
+    if shutil.which("java") is None:
+        _METEOR_BROKEN = "java not installed"
+        print("[meteor] skipped: Java is not installed (apt-get install -y default-jre-headless)")
+        return {}
+    import pycocoevalcap.meteor.meteor as m
+    jar = os.path.join(os.path.dirname(m.__file__), "meteor-1.5.jar")
+
+    keys = sorted(res)
+    n_refs = max(len(gts[k]) for k in keys)
+    with tempfile.TemporaryDirectory() as d:
+        hyp_path, ref_path = os.path.join(d, "hyp.txt"), os.path.join(d, "ref.txt")
+        with open(hyp_path, "w") as f:
+            f.write("\n".join(res[k][0] for k in keys) + "\n")
+        with open(ref_path, "w") as f:
+            for k in keys:  # exactly n_refs lines per image; repeat the last if fewer
+                refs = list(gts[k]) + [gts[k][-1]] * (n_refs - len(gts[k]))
+                f.write("\n".join(refs) + "\n")
+        cmd = ["java", "-Xmx2G", "-jar", jar, hyp_path, ref_path, "-l", "en", "-norm", "-r", str(n_refs)]
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _METEOR_BROKEN = "timeout"
+            print(f"[meteor] skipped: METEOR took longer than {timeout}s")
+            return {}
+
+    for line in out.stdout.splitlines():
+        if line.startswith("Final score:"):
+            return {"meteor": float(line.split(":", 1)[1]), "meteor_impl": "meteor-1.5"}
+    _METEOR_BROKEN = f"exit code {out.returncode}"
+    tail = "\n".join((out.stderr + out.stdout).strip().splitlines()[-8:])
+    print(f"[meteor] skipped: the METEOR jar failed (exit code {out.returncode}). Last output:\n{tail}")
+    return {}
 
 
 # --------------------------------------------------------------------- NLTK
