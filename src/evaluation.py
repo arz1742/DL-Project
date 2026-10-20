@@ -22,7 +22,7 @@ import numpy as np
 
 # Unsmoothed BLEU on a single sentence is often 0 for 3/4-grams; NLTK warns
 # every time. The behaviour is intended, so the warning is silenced.
-warnings.filterwarnings("ignore", message=".*counts of \\d-gram overlaps.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="nltk.translate.bleu_score")
 
 from src.tokenizer import clean_caption
 
