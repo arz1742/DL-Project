@@ -29,6 +29,7 @@ STAGES = {
     "frozen": ["lstm_frozen", "gru_frozen", "hybrid_frozen"],
     "finetuned": ["lstm_finetuned", "gru_finetuned", "hybrid_finetuned"],
     "paper": ["paper_protocol"],
+    "attention": ["attention", "transformer"],   # Part 2, needs --mode grid features
 }
 
 

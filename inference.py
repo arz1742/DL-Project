@@ -28,7 +28,7 @@ class Captioner:
     def __init__(self, rdir: str, processed_dir: str = "data/processed"):
         self.tokenizer = CaptionTokenizer.load(os.path.join(processed_dir, "tokenizer.json"))
         self.model, self.cfg = load_trained_model(rdir, self.tokenizer.vocab_size, processed_dir)
-        mode = "pooled" if self.cfg["encoder_mode"] == "frozen" else "conv4"
+        mode = {"frozen": "pooled", "finetune": "conv4", "grid": "grid"}[self.cfg["encoder_mode"]]
         self.extractor = build_resnet50_extractor(mode)
         self.gen = CaptionGenerator(self.model, self.tokenizer, self.cfg["max_length"])
 

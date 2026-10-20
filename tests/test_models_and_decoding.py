@@ -71,3 +71,40 @@ def test_encoder_decoder_split_matches_full_model():
     full = m.predict([img, seq], verbose=0)
     split = dec.predict([enc.predict(img, verbose=0), seq], verbose=0)
     assert np.allclose(full, split, atol=1e-5)
+
+
+@pytest.mark.parametrize("decoder", ["attention", "transformer"])
+def test_attention_models_shapes_maps_and_causality(decoder):
+    tok = _tok()
+    m = build_caption_model(tok.vocab_size, 12, decoder, "grid", units=32, embedding_dim=32,
+                            n_layers=2, n_heads=2, ff_dim=64, cnn_weights=None)
+    grid = np.random.rand(2, 7, 7, 2048).astype("float32")
+    seq = np.random.randint(1, tok.vocab_size, (2, 11)).astype("int32")
+    out = m.predict([grid, seq], verbose=0)
+    assert out.shape == (2, 11, tok.vocab_size)
+
+    # Changing a later word must not change predictions at earlier positions.
+    seq2 = seq.copy()
+    seq2[:, 6:] = (seq2[:, 6:] % (tok.vocab_size - 1)) + 1
+    out2 = m.predict([grid, seq2], verbose=0)
+    assert np.allclose(out[:, :6], out2[:, :6], atol=1e-5)
+
+    gen = CaptionGenerator(m, tok, 12)
+    state = gen.encode_images(grid)[0]
+    cap = gen.beam(state[None], 3)[0]
+    maps = gen.attention_maps(state, cap)
+    assert len(maps) == min(len(cap.split()) + 1, 10)
+    for mp in maps:
+        assert mp["map"].shape == (7, 7) and abs(float(mp["map"].sum()) - 1.0) < 1e-4
+
+
+def test_classic_models_have_no_attention_maps():
+    tok = _tok()
+    m = build_caption_model(tok.vocab_size, 12, "hybrid", "frozen", units=32, embedding_dim=32, cnn_weights=None)
+    gen = CaptionGenerator(m, tok, 12)
+    assert gen.attention_maps(gen.encode_images(np.random.rand(1, 2048).astype("float32"))[0], "a dog") == []
+
+
+def test_decoder_encoder_mismatch_is_rejected():
+    with pytest.raises(ValueError):
+        build_caption_model(30, 12, "attention", "frozen", cnn_weights=None)

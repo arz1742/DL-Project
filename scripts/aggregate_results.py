@@ -32,6 +32,8 @@ LABELS = {
     "hybrid_frozen": "C3 Hybrid LSTM→GRU, frozen", "lstm_finetuned": "C4 LSTM, fine-tuned",
     "gru_finetuned": "C5 GRU, fine-tuned", "hybrid_finetuned": "C6 Hybrid LSTM→GRU, fine-tuned",
     "paper_protocol": "Paper-protocol replication",
+    "attention": "A1 LSTM + soft attention", "transformer": "A2 Transformer decoder",
+    "blip_base": "BLIP-base (pretrained, 2022)", "blip_large": "BLIP-large (pretrained, 2022)",
 }
 # Kavitha & Karpagam (2025), Tables 2 and 3
 PAPER1 = {
@@ -46,7 +48,8 @@ def collect(runs_dir: str) -> pd.DataFrame:
     for path in sorted(glob.glob(os.path.join(runs_dir, "*", "seed*", "eval", "metrics.json"))):
         with open(path) as f:
             m = json.load(f)
-        tok = m["token_metrics"]
+        tok = m.get("token_metrics") or {"masked_acc": None, "top5_acc": None,
+                                         "unmasked_acc": None, "loss": None}  # pretrained models have none
         for dec, d in m["decodings"].items():
             row = {"config": m["config_name"], "seed": m["seed"], "decoding": dec,
                    "beam_width": d["beam_width"], "best_epoch": m["best_epoch"],
@@ -83,6 +86,27 @@ def table_a(df: pd.DataFrame, decoding: str) -> str:
             continue
         lines.append(f"| {LABELS[cfg]} | {sub.seed.nunique()} | "
                      + " | ".join(mean_std(sub, c) for c in cols) + " |")
+    return "\n".join(lines)
+
+
+PART2 = ["attention", "transformer", "blip_base", "blip_large"]
+
+
+def table_d(df: pd.DataFrame, decoding: str) -> str:
+    """Part 2: best classic model vs attention models vs a pretrained ceiling."""
+    cols = ["bleu1", "bleu4", "meteor", "cider", "key_object_recall", "unique_caption_pct"]
+    best = best_core_config(df, decoding)
+    head = "| Model | Seeds | " + " | ".join(c.replace("_", " ") for c in cols) + " |"
+    lines = [head, "|" + " --- |" * (len(cols) + 2)]
+    for cfg in ([best] if best else []) + PART2:
+        dec = decoding if cfg not in ("blip_base", "blip_large") else "beam3"
+        sub = df[(df.config == cfg) & (df.decoding == dec)]
+        if sub.empty:
+            continue
+        lines.append(f"| {LABELS.get(cfg, cfg)} | {sub.seed.nunique()} | "
+                     + " | ".join(mean_std(sub, c) for c in cols) + " |")
+    lines.append("\nBLIP was pretrained on ~129M web images with COCO captions and is shown only as a "
+                 "ceiling; it is not a like-for-like comparison.")
     return "\n".join(lines)
 
 
@@ -153,6 +177,8 @@ def main():
                                + table_a(df, args.decoding),
         "table_B_accuracy.md": f"# Table B: The accuracy illusion ({args.decoding})\n\n" + table_b(df, args.decoding),
         "table_C_decoding.md": "# Table C: Greedy vs beam search (BLEU-1, frozen encoders)\n\n" + table_c(df),
+        "table_D_attention.md": f"# Table D: Part 2, attention and pretrained models ({args.decoding})\n\n"
+                                + table_d(df, args.decoding),
     }
     for name, text in tables.items():
         with open(os.path.join(args.out_dir, name), "w") as f:
@@ -168,7 +194,7 @@ def main():
     }
     with open(os.path.join(args.out_dir, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
-    print(f"Wrote {len(df)} rows and 3 tables to {args.out_dir}/")
+    print(f"Wrote {len(df)} rows and {len(tables)} tables to {args.out_dir}/")
 
 
 if __name__ == "__main__":

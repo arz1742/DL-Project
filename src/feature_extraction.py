@@ -17,7 +17,12 @@ Two outputs, one per encoder mode used in the ablation study:
       while stages 1-4 stay frozen. Pre-computing stage 4 makes real
       fine-tuning cheap enough for a Colab L4.
 
-Both files come with an index file listing the image names in row order:
+  --mode grid    ->  data/features/resnet50_grid.npy     (N, 7, 7, 2048)   float16
+      ResNet50's final 7x7 feature map: 49 image regions of 2048 values each.
+      Used by the ATTENTION models (Part 2), which look at a different region
+      for each word they generate. ~1.6 GB.
+
+All files come with an index file listing the image names in row order:
       data/features/image_index.json
 
 Images are processed in batches (default 64), so the full Flickr8k set takes
@@ -40,6 +45,8 @@ from tqdm import tqdm
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 CONV4_LAYER = "conv4_block6_out"  # last layer of ResNet50 stage 4 -> (14, 14, 1024)
+CONV5_LAYER = "conv5_block3_out"  # last layer of ResNet50 -> (7, 7, 2048) region grid
+MODES = ("pooled", "conv4", "grid")
 
 
 def build_resnet50_extractor(mode: str, weights: str | None = "imagenet"):
@@ -58,7 +65,10 @@ def build_resnet50_extractor(mode: str, weights: str | None = "imagenet"):
     if mode == "conv4":
         return keras.Model(base.input, base.get_layer(CONV4_LAYER).output,
                            name="resnet50_to_conv4")
-    raise ValueError(f"Unknown mode {mode!r} (expected 'pooled' or 'conv4')")
+    if mode == "grid":
+        return keras.Model(base.input, base.get_layer(CONV5_LAYER).output,
+                           name="resnet50_to_grid")
+    raise ValueError(f"Unknown mode {mode!r} (expected one of {MODES})")
 
 
 def load_and_preprocess(path: str, target_size=(224, 224)) -> np.ndarray:
@@ -86,7 +96,7 @@ def extract_features(image_dir: str, image_names: list[str], mode: str,
                      batch_size: int = 64, weights: str | None = "imagenet") -> np.ndarray:
     """Runs the extractor over all images in batches; returns one stacked array."""
     model = build_resnet50_extractor(mode, weights=weights)
-    dtype = np.float16 if mode == "conv4" else np.float32
+    dtype = np.float32 if mode == "pooled" else np.float16
     out_shape = (len(image_names),) + tuple(model.output.shape[1:])
     out = np.zeros(out_shape, dtype=dtype)
 
@@ -115,7 +125,7 @@ def load_features(out_dir: str, mode: str, mmap: bool = True) -> tuple[np.ndarra
 
 def main():
     parser = argparse.ArgumentParser(description="Extract ResNet50 image features once.")
-    parser.add_argument("--mode", choices=["pooled", "conv4"], default="pooled")
+    parser.add_argument("--mode", choices=list(MODES), default="pooled")
     parser.add_argument("--image_dir", default="data/raw/Images")
     parser.add_argument("--processed_dir", default="data/processed")
     parser.add_argument("--out_dir", default="data/features")

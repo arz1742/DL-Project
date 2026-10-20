@@ -23,8 +23,8 @@ import yaml
 
 DEFAULTS = {
     "config_name": None,
-    "decoder": "lstm",              # lstm | gru | hybrid
-    "encoder_mode": "frozen",       # frozen | finetune
+    "decoder": "lstm",              # lstm | gru | hybrid | attention | transformer
+    "encoder_mode": "frozen",       # frozen | finetune | grid (attention decoders)
     "max_length": 34,
     "embedding_dim": 256,
     "units": 256,
@@ -38,6 +38,9 @@ DEFAULTS = {
     "embeddings": "learned",        # learned | glove
     "train_embeddings": True,
     "train_fraction": 1.0,          # S2 learning curve: fraction of training IMAGES used
+    "transformer_layers": 3,        # Transformer only
+    "transformer_heads": 4,
+    "transformer_ff_dim": 1024,
 }
 
 
@@ -98,6 +101,9 @@ def build_model_from_config(cfg: dict, vocab_size: int, processed_dir: str = "da
         embedding_matrix=load_embedding_matrix(cfg, processed_dir),
         train_embeddings=cfg["train_embeddings"],
         cnn_weights=cnn_weights,
+        n_layers=cfg["transformer_layers"],
+        n_heads=cfg["transformer_heads"],
+        ff_dim=cfg["transformer_ff_dim"],
     )
 
 

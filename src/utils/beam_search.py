@@ -9,6 +9,7 @@ took close to an hour per config on the full test set).
   CaptionGenerator.beam(states, k)         keeps the k most probable partial captions
   CaptionGenerator.beam_trace(state, k)    every beam at every step, for the beam-tree figure (S4)
   CaptionGenerator.word_probabilities(...) top-5 candidate words at each step (dashboard)
+  CaptionGenerator.attention_maps(...)     7x7 attention map per word (attention models only)
 
 The image encoder runs once per image; only the text decoder runs per step.
 Scores are summed log-probabilities, as in Kavitha & Karpagam (2025);
@@ -22,7 +23,9 @@ from src.models.caption_model import encoder_and_decoder
 
 class CaptionGenerator:
     def __init__(self, model, tokenizer, max_length: int):
+        from src.models.decoders import attention_probe
         self.encoder, self.decoder = encoder_and_decoder(model)
+        self.probe = attention_probe(self.decoder)
         self.tok = tokenizer
         self.seq_len = max_length - 1
         self.start = tokenizer.word2idx["<start>"]
@@ -132,6 +135,27 @@ class CaptionGenerator:
         return {"caption": caps[0], "steps": history, "final_scores": final[0].tolist()}
 
     # ------------------------------------------------------------------ inspection
+    def _caption_tokens(self, caption: str):
+        words = caption.split() + ["<end>"]
+        ids = [self.tok.word2idx.get(w, self.tok.word2idx["<unk>"]) for w in words]
+        seq = np.full((1, self.seq_len), self.pad, np.int32)
+        seq[0, 0] = self.start
+        for j, w in enumerate(ids[:self.seq_len - 1]):
+            seq[0, j + 1] = w
+        return words[:self.seq_len - 1], ids, seq
+
+    def attention_maps(self, state: np.ndarray, caption: str) -> list[dict]:
+        """
+        For each word of `caption` (and the final <end>), the 7x7 map of how
+        much the model looked at each image region while choosing that word.
+        Each map sums to 1. Returns [] for models without attention.
+        """
+        if self.probe is None:
+            return []
+        words, _, seq = self._caption_tokens(caption)
+        alpha = self.probe.predict_on_batch([state[None], seq])[0]  # (T, 49)
+        return [{"word": w, "map": alpha[j].reshape(7, 7)} for j, w in enumerate(words)]
+
     def word_probabilities(self, state: np.ndarray, caption: str, top: int = 5) -> list[dict]:
         """For each word of `caption`, the model's top-`top` candidates at that step."""
         words = caption.split() + ["<end>"]

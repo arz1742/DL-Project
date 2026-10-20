@@ -30,6 +30,9 @@ def build_caption_model(
     embedding_matrix=None,
     train_embeddings: bool = True,
     cnn_weights: str | None = "imagenet",
+    n_layers: int = 3,
+    n_heads: int = 4,
+    ff_dim: int = 1024,
 ) -> keras.Model:
     """
     max_length is the length of an encoded caption including <start>/<end>
@@ -38,8 +41,12 @@ def build_caption_model(
     """
     seq_len = max_length - 1
     encoder = build_image_encoder(encoder_mode, units, dropout, cnn_weights)
+    from src.models.decoders import ATTENTION_DECODERS
+    if (decoder_type in ATTENTION_DECODERS) != (encoder_mode == "grid"):
+        raise ValueError(f"decoder {decoder_type!r} needs encoder_mode 'grid'; classic decoders "
+                         f"need 'frozen' or 'finetune' (got {encoder_mode!r})")
     decoder = build_decoder(decoder_type, vocab_size, seq_len, embedding_dim, units,
-                            dropout, embedding_matrix, train_embeddings)
+                            dropout, embedding_matrix, train_embeddings, n_layers, n_heads, ff_dim)
 
     img = keras.Input(shape=encoder.input.shape[1:], name="image")
     tokens = keras.Input(shape=(seq_len,), dtype="int32", name="tokens")
@@ -70,7 +77,8 @@ def count_params(model: keras.Model) -> dict:
 
 if __name__ == "__main__":
     # Smoke test: builds every decoder x encoder combination (random CNN weights).
-    for enc in ["frozen", "finetune"]:
-        for dec in ["lstm", "gru", "hybrid"]:
+    for enc, decs in [("frozen", ["lstm", "gru", "hybrid"]), ("finetune", ["lstm", "gru", "hybrid"]),
+                      ("grid", ["attention", "transformer"])]:
+        for dec in decs:
             m = build_caption_model(3000, 34, dec, enc, cnn_weights=None)
-            print(f"{dec:7s} {enc:8s} {count_params(m)}")
+            print(f"{dec:11s} {enc:8s} {count_params(m)}")

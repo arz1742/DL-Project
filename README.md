@@ -118,6 +118,16 @@ Every run writes to `runs/<config>/seed<N>/` (config, history, best/last weights
 | C6 | `hybrid_finetuned` | LSTM → GRU | last block fine-tuned |
 | — | `paper_protocol` | LSTM → GRU | frozen, trained exactly like Paper 1 |
 
+**Part 2: beyond the syllabus**
+
+| ID | Config | Decoder | Image input |
+|---|---|:---:|:---:|
+| A1 | `attention` | LSTM + soft attention over image regions | frozen ResNet50, 7×7 regions |
+| A2 | `transformer` | 3-block Transformer decoder | frozen ResNet50, 7×7 regions |
+| — | `blip_base`, `blip_large` | pretrained BLIP (2022), no training | — |
+
+The attention models produce a 7×7 heatmap for every word they write, showing where in the photo they looked.
+
 Each core config runs with **3 seeds** so differences can be reported as mean ± std.
 Fine-tuned configs start from the frozen model of the same seed (two-stage fine-tuning).
 

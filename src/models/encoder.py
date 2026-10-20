@@ -9,9 +9,15 @@ Image side of the captioning model.
              -> ResNet50 conv5 block (TRAINABLE, ImageNet-initialised)
              -> global average pool (2048,) -> bridge -> decoder initial state
 
-Both paths produce the same 2048-d vector before the bridge, so a model
-trained with the frozen encoder can be loaded straight into the fine-tune
-model and training continues from there (two-stage fine-tuning).
+  grid     : input = precomputed ResNet50 final map (7, 7, 2048)
+             -> 49 region vectors -> Dense projection (49, units)
+             Used by the attention decoders (Part 2): the decoder sees every
+             region and decides which to look at for each word.
+
+The frozen and finetune paths produce the same 2048-d vector before the
+bridge, so a model trained with the frozen encoder can be loaded straight
+into the fine-tune model and training continues from there (two-stage
+fine-tuning).
 """
 
 import keras
@@ -54,6 +60,14 @@ def build_image_encoder(encoder_mode: str, units: int, dropout: float = 0.5,
     if encoder_mode == "frozen":
         img = keras.Input(shape=(2048,), name="image_input")
         state = bridge(img)
+    elif encoder_mode == "grid":
+        img = keras.Input(shape=(7, 7, 2048), name="image_input")
+        x = layers.Reshape((49, 2048), name="regions")(img)
+        x = layers.Dense(units, name="region_projection")(x)
+        # Raw ResNet values are large and unnormalised; LayerNorm keeps the
+        # attention softmax and the decoder's starting state out of saturation.
+        x = layers.LayerNormalization(name="region_norm")(x)
+        state = layers.Dropout(dropout, name="region_dropout")(x)
     elif encoder_mode == "finetune":
         img = keras.Input(shape=(14, 14, 1024), name="image_input")
         # training=False keeps BatchNorm on its ImageNet statistics;
@@ -61,5 +75,5 @@ def build_image_encoder(encoder_mode: str, units: int, dropout: float = 0.5,
         pooled = build_conv5_head(cnn_weights)(img, training=False)
         state = bridge(pooled)
     else:
-        raise ValueError(f"Unknown encoder_mode {encoder_mode!r} (expected 'frozen' or 'finetune')")
+        raise ValueError(f"Unknown encoder_mode {encoder_mode!r} (expected 'frozen', 'finetune' or 'grid')")
     return keras.Model(img, state, name="image_encoder")
