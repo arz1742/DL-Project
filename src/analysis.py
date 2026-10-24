@@ -232,3 +232,38 @@ def word_strip(image, maps: list[dict], caption_label: str, path: str, max_words
 
 def safe_name(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", text)
+
+
+def draw_beamtree(trace: dict, path: str):
+    """Columns = steps, rows = the 3 beams kept; lines join each word to the beam it extends."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    steps = trace["steps"]
+    k = len(steps[0]["word"])
+    fig, ax = plt.subplots(figsize=(1.5 * len(steps) + 3.5, 1.2 * k + 1.5))
+    best_row = int(np.argmax(trace["final_scores"]))
+    # trace back the winning path so it can be highlighted
+    on_path, row = set(), best_row
+    for t in range(len(steps) - 1, -1, -1):
+        on_path.add((t, row))
+        row = steps[t]["parent"][row]
+    ax.text(-1, 0, "<start>", ha="center", va="center", fontsize=10, zorder=2,
+            bbox=dict(boxstyle="round", fc="#fde0dd", ec="#555"))
+    for t, st in enumerate(steps):
+        for r in range(k):
+            parent_row = st["parent"][r] if t > 0 else 0
+            hot = (t, r) in on_path
+            ax.plot([t - 1, t], [-parent_row, -r], color="#d62728" if hot else "#999",
+                    lw=2.5 if hot else 1, zorder=1)
+            w = st["word"][r] if not (t > 0 and steps[t - 1]["finished"][st["parent"][r]]) else ""
+            ax.text(t, -r, w, ha="center", va="center", fontsize=10, zorder=2,
+                    bbox=dict(boxstyle="round", fc="#fde0dd" if hot else "white", ec="#555"))
+    ax.set_title(f"Beam search (k = {k}).  Beam: \"{trace['caption']}\"   Greedy: \"{trace['greedy']}\"",
+                 fontsize=11)
+    ax.set_xlim(-1.7, len(steps) - 0.3); ax.set_ylim(-k + 0.4, 0.6)
+    ax.axis("off")
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)

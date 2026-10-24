@@ -35,3 +35,6 @@ Thumbs.db
 # Training runs and generated results (kept on Google Drive instead)
 runs/
 results/
+
+# Dashboard bundle (unzipped locally from Drive)
+dashboard/data/
