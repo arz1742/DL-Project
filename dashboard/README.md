@@ -15,7 +15,7 @@ Download it from Google Drive.
 You need **Python 3.10, 3.11 or 3.12** (TensorFlow doesn't support newer versions yet).
 
 ```bash
-git clone -b day1-pipeline https://github.com/arz1742/DL-Project.git
+git clone https://github.com/arz1742/DL-Project.git
 cd DL-Project
 # unzip dashboard_bundle.zip HERE, into the DL-Project folder
 #   (it creates runs/, results/, dashboard/data/ and data/processed/tokenizer.json)
