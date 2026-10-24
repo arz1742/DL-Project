@@ -1,0 +1,22 @@
+# Part 2 config A2: small Transformer decoder (3 blocks, 4 heads) with
+# cross-attention over the 7x7 ResNet50 regions (beyond the syllabus).
+# Same inputs as config_attention.yaml, so LSTM-attention vs Transformer is
+# a fair comparison. Lower learning rate and dropout, as is standard for
+# Transformers.
+# Run: python train.py --config experiments/config_transformer.yaml --seed 1
+
+config_name: transformer
+decoder: transformer
+encoder_mode: grid
+max_length: 34
+embedding_dim: 256
+units: 256
+dropout: 0.1
+batch_size: 64
+epochs: 40
+learning_rate: 0.0003
+early_stopping_patience: 5
+mask_padding_in_loss: true
+transformer_layers: 3
+transformer_heads: 4
+transformer_ff_dim: 1024

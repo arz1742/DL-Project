@@ -1,0 +1,19 @@
+# Replication of Kavitha & Karpagam (2025)'s training protocol, used for the
+# "accuracy illusion" comparison (Table B). Same model as hybrid_frozen, but:
+#   * padding positions are COUNTED in the loss and accuracy (as the paper's
+#     reported 0.89 accuracy implies)
+#   * fixed 40 epochs, batch 32, Adam lr 0.001, no early stopping
+# Run: python train.py --config experiments/config_paper_protocol.yaml --seed 1
+
+config_name: paper_protocol
+decoder: hybrid
+encoder_mode: frozen
+max_length: 34
+embedding_dim: 256
+units: 256
+dropout: 0.5
+batch_size: 32
+epochs: 40
+learning_rate: 0.001
+early_stopping_patience: null
+mask_padding_in_loss: false

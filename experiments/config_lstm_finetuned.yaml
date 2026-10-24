@@ -1,15 +1,19 @@
-# Ablation config 2: LSTM decoder + fine-tuned ResNet50 encoder
-# Run with: python train.py --decoder lstm \
-#             --features data/features/resnet50_finetune_features.pkl \
-#             --config_name lstm_finetuned
+# Core config C4: LSTM decoder + fine-tuned ResNet50 encoder
+# Stage 2 of two-stage fine-tuning: starts from lstm_frozen (same seed),
+# then trains ResNet50's last block (conv5_x) together with the decoder.
+# Uses precomputed stage-4 maps (data/features/resnet50_conv4.npy).
+# Run AFTER lstm_frozen: python train.py --config experiments/config_lstm_finetuned.yaml --seed 1
 
 config_name: lstm_finetuned
 decoder: lstm
 encoder_mode: finetune
-features_path: data/features/resnet50_finetune_features.pkl
+init_from: lstm_frozen
 max_length: 34
 embedding_dim: 256
 units: 256
-batch_size: 64
-epochs: 30
-learning_rate: 0.001
+dropout: 0.5
+batch_size: 32
+epochs: 10
+learning_rate: 0.00001        # low LR: ResNet50's conv5 block + decoder are updated together
+early_stopping_patience: 3
+mask_padding_in_loss: true

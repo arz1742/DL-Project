@@ -10,7 +10,8 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import tempfile
-from src.data_loader import load_captions, split_dataset
+import pytest
+from src.data_loader import load_captions, split_dataset, check_no_leakage
 
 
 def _write_temp_captions_file(rows: list[str]) -> str:
@@ -52,6 +53,17 @@ def test_split_dataset_is_reproducible_with_seed():
     split_a = split_dataset(image_to_captions, seed=7)
     split_b = split_dataset(image_to_captions, seed=7)
     assert split_a == split_b
+
+
+def test_fixed_size_split_matches_paper_protocol():
+    image_to_captions = {f"img{i}.jpg": ["c"] * 5 for i in range(8091)}
+    train, val, test = split_dataset(image_to_captions, seed=42, val_size=1000, test_size=1000)
+    assert (len(train), len(val), len(test)) == (6091, 1000, 1000)
+
+
+def test_leakage_check_catches_overlap():
+    with pytest.raises(AssertionError):
+        check_no_leakage(["a.jpg", "b.jpg"], ["b.jpg"], ["c.jpg"])
 
 
 if __name__ == "__main__":

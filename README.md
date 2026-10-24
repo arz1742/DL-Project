@@ -30,50 +30,32 @@ This project builds that system from scratch, combining two types of neural netw
 💬  "a brown dog running through the grass"
 ```
 
-**Why this project is more than a copy-paste tutorial:** most image captioning demos stop at "build one model, see if it works." This project instead runs a **controlled experiment** — training **4 different versions** of the same system, changing one design choice at a time, to actually measure what matters:
+**Why this project is more than a copy-paste tutorial:** most image captioning demos stop at "build one model, see if it works." This project instead runs a **controlled experiment** — training **6 different versions** of the same system (each with 3 random seeds), changing one design choice at a time, to actually measure what matters:
 
-1. Does an **LSTM** or a **GRU** make a better decoder?
+1. Does an **LSTM**, a **GRU**, or Paper 1's **hybrid LSTM→GRU** make the best decoder?
 2. Does **fine-tuning** the CNN (letting it adapt during training) actually help, or is a plain pretrained CNN good enough?
 
-This 2×2 comparison — LSTM/GRU × frozen/fine-tuned — is something neither of the two research papers this project is based on actually tests directly. That comparison is this project's real contribution.
+This comparison — LSTM / GRU / hybrid × frozen / fine-tuned — is something neither of the two research papers this project is based on actually tests directly. That comparison is this project's real contribution.
 
 ---
 
 ## 📊 Where Things Stand Right Now
 
-### ✅ Fully Done
-- **Dataset pipeline** — Flickr8k (8,091 images, 40,455 captions) loaded, cleaned, and split into train/val/test
-- **Vocabulary** — 2,740-word vocabulary built from training captions
-- **Config 1: LSTM + Frozen CNN** — ✅ **trained for the full 30 epochs and evaluated**
+### ✅ Done
+- **Dataset pipeline** — Flickr8k (8,091 images, 40,455 captions), split by image into **6,091 / 1,000 / 1,000** (train / val / test, matching Kavitha & Karpagam 2025), with an automatic check that no image appears in two splits
+- **Rebuilt training pipeline** (Day 1 of the 2-week plan):
+  - whole-caption teacher forcing (~12× fewer forward passes than before)
+  - **real fine-tuning**: ResNet50's last block (conv5_x) is trained on precomputed stage-4 maps
+  - config-driven runs with random seeds, early stopping and automatic resume after a Colab disconnect
+  - batched greedy + beam search (minutes instead of ~1 hour per evaluation)
+  - full metric suite: COCO BLEU-1–4, METEOR, ROUGE-L, CIDEr, masked / unmasked / top-5 token accuracy, key-object recall, caption diversity, and Paper 1's 40-image protocol
+- **25 automated tests** (`pytest tests/`)
 
-  | Metric | Result |
-  |---|---|
-  | Final training accuracy | 44.5% |
-  | Final validation accuracy | 44.3% (no overfitting — train/val nearly identical) |
-  | BLEU-1 | **0.4846** |
-  | BLEU-2 | 0.2866 |
-  | BLEU-3 | 0.1892 |
-  | BLEU-4 | 0.1286 |
+### ⏳ Next
+- Run the full study on a Colab L4: 6 configs × 3 seeds + the paper-protocol replication (`notebooks/00_colab_pipeline.ipynb`)
+- Showpiece analyses (Grad-CAM word heatmaps, learning curve, t-SNE, beam tree, error taxonomy) and the final dashboard
 
-  **Real example output** from this model:
-  > 🖼️ *(a photo of a black-and-white dog on grass)*
-  > **Predicted:** "a black and white dog is running on the grass"
-  > **Reference (human-written):** "a dog jumps off a wooden porch"
-
-  The captions are grammatically correct and often get the right general subject (dog, grass) — sometimes the exact action/scene doesn't match, which is expected at this stage and matches known limitations described in both source papers.
-
-### 🔄 Currently Running
-- **Config 2: LSTM + Fine-tuned CNN** — actively training (true end-to-end fine-tuning, where the CNN itself adjusts during training, not just the decoder)
-  - Currently past epoch 8/30
-  - Loss steadily decreasing every epoch (5.03 → 4.17 and still dropping)
-  - Validation accuracy tracking slightly *above* training accuracy — a good sign of healthy generalization, no overfitting
-  - Training across multiple sessions using automatic checkpoint save/resume, so no progress is ever lost between sessions
-
-### ⏳ Not Started Yet
-- **Config 3: GRU + Frozen CNN**
-- **Config 4: GRU + Fine-tuned CNN**
-- Final BLEU comparison across all 4 configs
-- Written results analysis and report
+> **Earlier results (old pipeline, superseded):** `lstm_frozen` reached BLEU-1 0.4846 / BLEU-4 0.1286 (average smoothed sentence BLEU, ~607-image test split). The old "fine-tuned" configs reused the frozen features, so they did not actually fine-tune. All configs are retrained with the new pipeline.
 
 ---
 
@@ -98,35 +80,86 @@ Build a working CNN + LSTM/GRU image captioning system grounded in two recent re
 
 ```
 DL-Project/
-├── src/                  Core code: data loading, tokenizer, CNN feature extraction, model architectures
-├── train.py                Trains the FROZEN-CNN configs (fast — CNN features precomputed once)
-├── train_finetune.py        Trains the FINE-TUNED-CNN configs (slower — CNN learns too, in real time)
-├── evaluate.py                Scores a trained model using BLEU
-├── inference.py                 Generate a caption for any image you give it
-├── experiments/                  One config file per ablation run (LSTM/GRU × frozen/fine-tuned)
-├── docs/                           Proposal, literature review
-└── tests/                           Automated checks for the core code
+├── notebooks/00_colab_pipeline.ipynb   ▶ run EVERYTHING on Colab (start here)
+├── train.py                            train one config + seed (resumable)
+├── evaluate.py                         all metrics + predictions.csv for one run
+├── inference.py                        caption any image
+├── build_tokenizer.py                  vocabulary from the training captions
+├── experiments/config_*.yaml           one file per config (see below)
+├── scripts/run_experiments.py          train + evaluate many configs/seeds in order
+├── scripts/aggregate_results.py        → results/ tables A, B, C + summary.json
+├── src/
+│   ├── data_loader.py                  captions.txt → image-level splits
+│   ├── tokenizer.py                    cleaning + vocabulary
+│   ├── feature_extraction.py           ResNet50 → pooled (2048) and conv4 (14×14×1024) features
+│   ├── dataset.py                      batches of (image feature, caption)
+│   ├── evaluation.py                   BLEU, METEOR, ROUGE-L, CIDEr, key-object recall, diversity
+│   ├── models/encoder.py               frozen bridge / trainable conv5 block
+│   ├── models/decoders.py              LSTM, GRU, hybrid LSTM→GRU
+│   ├── models/metrics.py               masked / unmasked / top-5 accuracy, losses
+│   └── utils/beam_search.py            batched greedy + beam search, beam traces
+├── tests/                              pytest suite (CPU, no dataset needed)
+└── docs/                               proposal, literature review
 ```
 
----
-
-## 🧪 The Four-Way Comparison
-
-| Config | Decoder | CNN Encoder | Status |
-|---|:---:|:---:|:---:|
-| `lstm_frozen` | LSTM | Frozen | ✅ Done — BLEU-1: 0.4846 |
-| `lstm_finetuned` | LSTM | Fine-tuned | 🔄 Training (epoch 8+/30) |
-| `gru_frozen` | GRU | Frozen | ⏳ Pending |
-| `gru_finetuned` | GRU | Fine-tuned | ⏳ Pending |
+Every run writes to `runs/<config>/seed<N>/` (config, history, best/last weights, `eval/`).
 
 ---
 
-## 🔭 What's Next
+## 🧪 The Experiments
 
-1. Finish training `lstm_finetuned`
-2. Train `gru_frozen` and `gru_finetuned`
-3. Run BLEU evaluation on all 4, compare them side by side
-4. Write up the findings — which decoder wins, whether fine-tuning was worth the extra compute cost
+| ID | Config | Decoder | ResNet50 encoder |
+|---|---|:---:|:---:|
+| C1 | `lstm_frozen` | LSTM | frozen |
+| C2 | `gru_frozen` | GRU | frozen |
+| C3 | `hybrid_frozen` | LSTM → GRU | frozen |
+| C4 | `lstm_finetuned` | LSTM | last block fine-tuned |
+| C5 | `gru_finetuned` | GRU | last block fine-tuned |
+| C6 | `hybrid_finetuned` | LSTM → GRU | last block fine-tuned |
+| — | `paper_protocol` | LSTM → GRU | frozen, trained exactly like Paper 1 |
+
+**Part 2: beyond the syllabus**
+
+| ID | Config | Decoder | Image input |
+|---|---|:---:|:---:|
+| A1 | `attention` | LSTM + soft attention over image regions | frozen ResNet50, 7×7 regions |
+| A2 | `transformer` | 3-block Transformer decoder | frozen ResNet50, 7×7 regions |
+| — | `blip_base`, `blip_large` | pretrained BLIP (2022), no training | — |
+
+**Encoder comparison** (hybrid decoder, frozen encoder, 3 seeds): `hybrid_vgg16` (VGG16, 2014),
+`hybrid_frozen` (ResNet50, 2015) and `hybrid_clip` (CLIP ViT-B/32, 2021) — does the encoder matter more than the decoder?
+
+The attention models produce a 7×7 heatmap for every word they write, showing where in the photo they looked.
+
+Each core config runs with **3 seeds** so differences can be reported as mean ± std.
+Fine-tuned configs start from the frozen model of the same seed (two-stage fine-tuning).
+
+### Why there is a "paper protocol" run
+Kavitha & Karpagam report **0.8932 accuracy** but only **~0.60 BLEU-1**. Their accuracy counts
+padding tokens: most of a 34-token caption is padding, which is trivial to predict. The
+`paper_protocol` run reproduces that training setup so the report can show both numbers
+side by side — the same model, measured honestly and measured the paper's way.
+
+---
+
+## 🚀 How to Run
+
+**On Colab (recommended):** open `notebooks/00_colab_pipeline.ipynb`, choose an **L4 GPU**, run all cells.
+
+**Locally:**
+```bash
+pip install -r requirements.txt
+python src/data_loader.py                        # needs data/raw/captions.txt + data/raw/Images/
+python build_tokenizer.py
+python src/feature_extraction.py --mode pooled
+python src/feature_extraction.py --mode conv4
+python scripts/run_experiments.py --stage frozen --seeds 1,2,3
+python scripts/run_experiments.py --stage finetuned --seeds 1,2,3
+python scripts/run_experiments.py --stage paper --seeds 1
+python scripts/aggregate_results.py
+python inference.py --image photo.jpg --config_name hybrid_frozen --seed 1 --show_probs
+pytest tests/
+```
 
 ---
 

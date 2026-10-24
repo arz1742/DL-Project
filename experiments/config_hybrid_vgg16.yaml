@@ -1,0 +1,18 @@
+# Encoder comparison: VGG16 (2014) pooled features + hybrid decoder.
+# The 'old CNN' point of the comparison; everything else matches hybrid_frozen (C3).
+# Needs: python src/feature_extraction.py --mode vgg16
+# Run: python train.py --config experiments/config_hybrid_vgg16.yaml --seed 1
+
+config_name: hybrid_vgg16
+decoder: hybrid
+encoder_mode: frozen
+features: vgg16
+max_length: 34
+embedding_dim: 256
+units: 256
+dropout: 0.5
+batch_size: 32
+epochs: 40
+learning_rate: 0.001
+early_stopping_patience: 5
+mask_padding_in_loss: true

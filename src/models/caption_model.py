@@ -1,68 +1,85 @@
 """
 src/models/caption_model.py
 
-Ties the encoder bridge and decoder (LSTM or GRU) into a single trainable
-model, and provides the factory function used by train.py to build any of
-the four ablation configurations from one place.
+Builds the full captioning model for any ablation config from one place:
+
+    image  ->  image_encoder  ->  state (units,)
+                                     |
+    tokens ->  text_decoder([state, tokens])  ->  next-word probabilities (T, V)
+
+The two halves are kept as named sub-models so decoding can run the (possibly
+expensive) image encoder ONCE per image and then call only the decoder for
+each generated word.
 """
 
-from tensorflow.keras import layers, Model, optimizers
+import keras
 
-from src.models.encoder import build_bridge_layer
-from src.models.decoder_lstm import build_lstm_decoder
-from src.models.decoder_gru import build_gru_decoder
+from src.models.encoder import build_image_encoder
+from src.models.decoders import build_decoder
+from src.models.metrics import masked_ce, padded_ce, standard_metrics
 
 
 def build_caption_model(
     vocab_size: int,
-    max_length: int,
+    max_length: int = 34,
     decoder_type: str = "lstm",
+    encoder_mode: str = "frozen",
     embedding_dim: int = 256,
     units: int = 256,
-    learning_rate: float = 1e-3,
-) -> Model:
+    dropout: float = 0.5,
+    embedding_matrix=None,
+    train_embeddings: bool = True,
+    cnn_weights: str | None = "imagenet",
+    n_layers: int = 3,
+    n_heads: int = 4,
+    ff_dim: int = 1024,
+    feature_dim: int = 2048,
+) -> keras.Model:
     """
-    decoder_type: "lstm" or "gru" — selects which decoder module to use.
-    Note: embedding_dim must equal `units` so the bridged feature vector
-    can be used directly as the recurrent layer's initial state.
+    max_length is the length of an encoded caption including <start>/<end>
+    and padding. The model reads tokens[:-1] and predicts tokens[1:], so its
+    sequence length is max_length - 1.
     """
-    if embedding_dim != units:
-        raise ValueError(
-            "embedding_dim must equal units, since the bridged image "
-            "feature is used directly as the decoder's initial state."
-        )
+    seq_len = max_length - 1
+    encoder = build_image_encoder(encoder_mode, units, dropout, cnn_weights, feature_dim)
+    from src.models.decoders import ATTENTION_DECODERS
+    if (decoder_type in ATTENTION_DECODERS) != (encoder_mode == "grid"):
+        raise ValueError(f"decoder {decoder_type!r} needs encoder_mode 'grid'; classic decoders "
+                         f"need 'frozen' or 'finetune' (got {encoder_mode!r})")
+    decoder = build_decoder(decoder_type, vocab_size, seq_len, embedding_dim, units,
+                            dropout, embedding_matrix, train_embeddings, n_layers, n_heads, ff_dim)
 
-    feature_input = layers.Input(shape=(2048,), name="raw_cnn_feature")
-    bridge = build_bridge_layer(embedding_dim=embedding_dim)
-    bridged_feature = bridge(feature_input)
+    img = keras.Input(shape=encoder.input.shape[1:], name="image")
+    tokens = keras.Input(shape=(seq_len,), dtype="int32", name="tokens")
+    probs = decoder([encoder(img), tokens])
+    return keras.Model([img, tokens], probs, name=f"captioner_{decoder_type}_{encoder_mode}")
 
-    if decoder_type == "lstm":
-        decoder = build_lstm_decoder(vocab_size, max_length, embedding_dim, units)
-    elif decoder_type == "gru":
-        decoder = build_gru_decoder(vocab_size, max_length, embedding_dim, units)
-    else:
-        raise ValueError(f"Unknown decoder_type: {decoder_type} (expected 'lstm' or 'gru')")
 
-    caption_input = layers.Input(shape=(max_length,), name="caption_sequence")
-    output = decoder([bridged_feature, caption_input])
-
-    model = Model(
-        inputs=[feature_input, caption_input],
-        outputs=output,
-        name=f"image_captioning_{decoder_type}",
-    )
+def compile_caption_model(model: keras.Model, learning_rate: float = 1e-3,
+                          mask_padding_in_loss: bool = True, clipnorm: float | None = 5.0):
     model.compile(
-        optimizer=optimizers.Adam(learning_rate=learning_rate),
-        loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"],
+        optimizer=keras.optimizers.Adam(learning_rate=learning_rate, clipnorm=clipnorm),
+        loss=masked_ce if mask_padding_in_loss else padded_ce,
+        metrics=standard_metrics(),
     )
     return model
 
 
+def encoder_and_decoder(model: keras.Model) -> tuple[keras.Model, keras.Model]:
+    return model.get_layer("image_encoder"), model.get_layer("text_decoder")
+
+
+def count_params(model: keras.Model) -> dict:
+    import numpy as np
+    trainable = int(sum(np.prod(w.shape) for w in model.trainable_weights))
+    total = int(sum(np.prod(w.shape) for w in model.weights))
+    return {"trainable": trainable, "total": total}
+
+
 if __name__ == "__main__":
-    # Smoke test — builds both variants and prints a summary.
-    # Safe to run on CPU; just checks the graph is wired correctly.
-    for dtype in ["lstm", "gru"]:
-        print(f"\n=== Building {dtype.upper()} caption model ===")
-        m = build_caption_model(vocab_size=5000, max_length=34, decoder_type=dtype)
-        m.summary()
+    # Smoke test: builds every decoder x encoder combination (random CNN weights).
+    for enc, decs in [("frozen", ["lstm", "gru", "hybrid"]), ("finetune", ["lstm", "gru", "hybrid"]),
+                      ("grid", ["attention", "transformer"])]:
+        for dec in decs:
+            m = build_caption_model(3000, 34, dec, enc, cnn_weights=None)
+            print(f"{dec:11s} {enc:8s} {count_params(m)}")

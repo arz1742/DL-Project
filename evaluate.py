@@ -1,122 +1,119 @@
 """
 evaluate.py
 
-Computes BLEU-1 to BLEU-4 scores for a trained model on the test set.
-Inference itself is cheap (no training), so this runs fine on CPU —
-run it once a trained checkpoint is available.
+Scores one trained run on the 1000 test images and writes everything the
+results tables, the showpiece analyses and the dashboard need:
+
+    runs/<config>/seed<seed>/eval/metrics.json      every number, per decoding method
+    runs/<config>/seed<seed>/eval/predictions.csv   one row per test image per decoding
 
 Usage:
-    python evaluate.py --decoder lstm --features data/features/resnet50_frozen_features.pkl \
-                        --config_name lstm_frozen --checkpoint_epoch 29
+    python evaluate.py --config_name lstm_frozen --seed 1
+    python evaluate.py --config_name hybrid_frozen --seed 1 --decodings greedy,beam1,beam3,beam5,beam10
+
+Metrics (see src/evaluation.py and src/models/metrics.py):
+  token level (teacher forcing): masked accuracy, top-5 accuracy, unmasked accuracy, loss
+  caption level, per decoding:   COCO BLEU-1..4, METEOR, ROUGE-L, CIDEr; NLTK corpus BLEU;
+                                 average sentence BLEU; Paper-1 protocol (max BLEU-1 over 40
+                                 images); key-object recall; caption diversity
 """
 
+import os
+import sys
+import csv
 import json
-import pickle
+import time
 import argparse
 
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-from tqdm import tqdm
+import numpy as np
 
-from src.tokenizer import CaptionTokenizer, clean_caption
-from src.models.caption_model import build_caption_model
-from src.utils.beam_search import beam_search_decode, greedy_decode
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
+from src.tokenizer import CaptionTokenizer  # noqa: E402
+from src.dataset import encode_split, CaptionBatches  # noqa: E402
+from src.feature_extraction import load_features  # noqa: E402
+from src.utils.run_io import run_dir, load_trained_model, write_json, read_json, feature_mode  # noqa: E402
+from src.utils.beam_search import CaptionGenerator  # noqa: E402
+from src import evaluation as ev  # noqa: E402,F401
+from src.scoring import score_captions, print_summary, write_outputs  # noqa: E402
 
 
-def compute_bleu_scores(references: list[str], hypothesis: str) -> dict:
-    """
-    references: list of raw reference captions for one image (5 for Flickr8k)
-    hypothesis: the model's generated caption
-    """
-    ref_tokens = [clean_caption(r).split() for r in references]
-    hyp_tokens = clean_caption(hypothesis).split()
-    smoothie = SmoothingFunction().method4
 
-    return {
-        "bleu1": sentence_bleu(ref_tokens, hyp_tokens, weights=(1, 0, 0, 0), smoothing_function=smoothie),
-        "bleu2": sentence_bleu(ref_tokens, hyp_tokens, weights=(0.5, 0.5, 0, 0), smoothing_function=smoothie),
-        "bleu3": sentence_bleu(ref_tokens, hyp_tokens, weights=(0.33, 0.33, 0.33, 0), smoothing_function=smoothie),
-        "bleu4": sentence_bleu(ref_tokens, hyp_tokens, weights=(0.25, 0.25, 0.25, 0.25), smoothing_function=smoothie),
-    }
+def parse_decoding(name: str) -> int:
+    if name == "greedy":
+        return 1
+    if name.startswith("beam"):
+        return int(name[4:])
+    raise ValueError(f"Unknown decoding {name!r}; use greedy or beamK, e.g. beam5")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate a trained captioning model with BLEU.")
-    parser.add_argument("--decoder", choices=["lstm", "gru"], required=True)
-    parser.add_argument("--features", required=True)
-    parser.add_argument("--test_captions", default="data/processed/test_captions.json")
-    parser.add_argument("--tokenizer_path", default="data/processed/tokenizer.json")
-    parser.add_argument("--config_name", required=True)
-    parser.add_argument("--checkpoint_epoch", type=int, required=True)
-    parser.add_argument("--checkpoint_dir", default="checkpoints")
-    parser.add_argument("--max_length", type=int, default=34)
-    parser.add_argument("--embedding_dim", type=int, default=256)
-    parser.add_argument("--units", type=int, default=256)
-    parser.add_argument("--beam_width", type=int, default=5)
-    parser.add_argument("--decoding", choices=["beam", "greedy"], default="beam")
-    parser.add_argument("--limit", type=int, default=None,
-                         help="Optional: only evaluate on the first N test images (faster sanity check).")
-    args = parser.parse_args()
+    p = argparse.ArgumentParser(description="Evaluate a trained captioning run.")
+    p.add_argument("--config_name", required=True)
+    p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--runs_dir", default="runs")
+    p.add_argument("--features_dir", default="data/features")
+    p.add_argument("--processed_dir", default="data/processed")
+    p.add_argument("--split", default="test", choices=["test", "val"])
+    p.add_argument("--decodings", default="greedy,beam3,beam5")
+    p.add_argument("--limit", type=int, default=None, help="Only the first N images (quick check).")
+    p.add_argument("--no_meteor", action="store_true", help="Skip METEOR (it is the slowest metric).")
+    args = p.parse_args()
 
-    tokenizer = CaptionTokenizer.load(args.tokenizer_path)
-    with open(args.features, "rb") as f:
-        features = pickle.load(f)
-    with open(args.test_captions, "r") as f:
-        test_captions = json.load(f)
+    rdir = run_dir(args.runs_dir, args.config_name, args.seed)
+    state = read_json(os.path.join(rdir, "state.json"), {})
+    if not state.get("done"):
+        raise RuntimeError(f"{rdir} has not finished training.")
+    out_dir = os.path.join(rdir, "eval" if args.split == "test" else "eval_val")
+    os.makedirs(out_dir, exist_ok=True)
 
-    model = build_caption_model(
-        vocab_size=tokenizer.vocab_size,
-        max_length=args.max_length,
-        decoder_type=args.decoder,
-        embedding_dim=args.embedding_dim,
-        units=args.units,
-    )
-    weights_path = f"{args.checkpoint_dir}/{args.config_name}_epoch{args.checkpoint_epoch}.weights.h5"
-    model.load_weights(weights_path)
-    print(f"Loaded weights: {weights_path}")
+    tokenizer = CaptionTokenizer.load(os.path.join(args.processed_dir, "tokenizer.json"))
+    model, cfg = load_trained_model(rdir, tokenizer.vocab_size, args.processed_dir)
+    from src.models.caption_model import compile_caption_model
+    compile_caption_model(model, mask_padding_in_loss=cfg["mask_padding_in_loss"])
 
-    image_names = list(test_captions.keys())
+    with open(os.path.join(args.processed_dir, f"{args.split}_captions.json")) as f:
+        refs = json.load(f)
+    with open(os.path.join(args.processed_dir, "train_captions.json")) as f:
+        train_caps = json.load(f)
     if args.limit:
-        image_names = image_names[:args.limit]
+        refs = dict(sorted(refs.items())[:args.limit])
+    names = sorted(refs)
 
-    all_scores = {"bleu1": [], "bleu2": [], "bleu3": [], "bleu4": []}
-    sample_outputs = []
+    feats, name_to_row = load_features(args.features_dir, feature_mode(cfg))
+    img_feats = np.asarray(feats[[name_to_row[n] for n in names]], np.float32)
 
-    for image_name in tqdm(image_names, desc="Evaluating"):
-        if image_name not in features:
-            continue
-        feature_vector = features[image_name]
-        references = test_captions[image_name]
+    print(f"=== Evaluating {args.config_name} seed {args.seed} on {len(names)} {args.split} images ===")
+    metrics = {"config_name": args.config_name, "seed": args.seed, "split": args.split,
+               "n_images": len(names), "best_epoch": state["best_epoch"] + 1,
+               "train_seconds": state.get("train_seconds")}
 
-        if args.decoding == "beam":
-            hypothesis = beam_search_decode(model, feature_vector, tokenizer, args.max_length, args.beam_width)
-        else:
-            hypothesis = greedy_decode(model, feature_vector, tokenizer, args.max_length)
+    # ---- token-level metrics (teacher forcing, same definitions as training) ----
+    rows, tok, _ = encode_split(refs, tokenizer, cfg["max_length"], name_to_row)
+    token = model.evaluate(CaptionBatches(feats, rows, tok, 256, shuffle=False),
+                           verbose=0, return_dict=True)
+    metrics["token_metrics"] = {k: float(v) for k, v in token.items()}
+    print("Token metrics:", {k: round(v, 4) for k, v in metrics["token_metrics"].items()})
 
-        scores = compute_bleu_scores(references, hypothesis)
-        for key in all_scores:
-            all_scores[key].append(scores[key])
+    # ---- caption generation ----
+    gen = CaptionGenerator(model, tokenizer, cfg["max_length"])
+    states = gen.encode_images(img_feats)
+    metrics["decodings"] = {}
+    pred_rows = []
+    for dec in args.decodings.split(","):
+        k = parse_decoding(dec)
+        t0 = time.time()
+        caps = gen.greedy(states) if dec == "greedy" else gen.beam(states, k)
+        hyps = dict(zip(names, caps))
+        secs = time.time() - t0
 
-        sample_outputs.append({
-            "image": image_name,
-            "predicted_caption": hypothesis,
-            "reference_captions": references,
-            "bleu4": scores["bleu4"],
-        })
+        m, rows_for_dec = score_captions(refs, hyps, train_caps, dec, use_meteor=not args.no_meteor)
+        m.update(beam_width=k, decode_seconds=round(secs, 1))
+        metrics["decodings"][dec] = m
+        pred_rows += rows_for_dec
+        print_summary(dec, m, secs)
 
-    avg_scores = {key: sum(vals) / len(vals) for key, vals in all_scores.items()}
-    print("\n=== Average BLEU scores ===")
-    for key, val in avg_scores.items():
-        print(f"  {key.upper()}: {val:.4f}")
-
-    out_path = f"experiments/results/{args.config_name}_bleu_{args.decoding}.json"
-    with open(out_path, "w") as f:
-        json.dump({
-            "config": args.config_name,
-            "decoding": args.decoding,
-            "average_scores": avg_scores,
-            "sample_outputs": sample_outputs[:20],  # keep a readable sample, not all
-        }, f, indent=2)
-    print(f"Saved evaluation results to {out_path}")
+    write_outputs(out_dir, metrics, pred_rows)
 
 
 if __name__ == "__main__":

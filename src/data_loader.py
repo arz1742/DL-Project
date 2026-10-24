@@ -50,24 +50,50 @@ def split_dataset(
     train_ratio: float = 0.85,
     val_ratio: float = 0.075,
     seed: int = 42,
+    val_size: int | None = None,
+    test_size: int | None = None,
 ) -> tuple[list[str], list[str], list[str]]:
     """
-    Splits image filenames into train/val/test sets.
-    Ratios default to roughly 85/7.5/7.5, adjust as needed for your report.
+    Splits image filenames (NOT captions) into train/val/test sets, so all 5
+    captions of an image always land in the same split — no leakage.
+
+    If val_size / test_size are given they are used as fixed image counts
+    (the project default is 1000 / 1000, matching Kavitha & Karpagam 2025).
+    Otherwise the ratios are used.
     """
     image_names = sorted(image_to_captions.keys())
     random.Random(seed).shuffle(image_names)
 
     n = len(image_names)
-    n_train = int(n * train_ratio)
-    n_val = int(n * val_ratio)
+    if val_size is not None and test_size is not None:
+        if val_size + test_size >= n:
+            raise ValueError(f"val_size + test_size ({val_size + test_size}) must be < {n} images")
+        n_val, n_test = val_size, test_size
+        n_train = n - n_val - n_test
+    else:
+        n_train = int(n * train_ratio)
+        n_val = int(n * val_ratio)
 
     train_set = image_names[:n_train]
     val_set = image_names[n_train:n_train + n_val]
     test_set = image_names[n_train + n_val:]
 
+    check_no_leakage(train_set, val_set, test_set)
     print(f"Split: train={len(train_set)}, val={len(val_set)}, test={len(test_set)}")
     return train_set, val_set, test_set
+
+
+def check_no_leakage(train_set, val_set, test_set) -> None:
+    """Raises if any image appears in more than one split."""
+    train, val, test = set(train_set), set(val_set), set(test_set)
+    overlaps = {
+        "train∩val": len(train & val),
+        "train∩test": len(train & test),
+        "val∩test": len(val & test),
+    }
+    bad = {k: v for k, v in overlaps.items() if v}
+    if bad:
+        raise AssertionError(f"Data leakage between splits: {bad}")
 
 
 def save_split(
@@ -85,10 +111,13 @@ def build_and_save_splits(
     raw_dir: str = "data/raw",
     out_dir: str = "data/processed",
     seed: int = 42,
+    val_size: int = 1000,
+    test_size: int = 1000,
 ) -> None:
     """
-    End-to-end: reads Flickr8k captions.txt, splits into train/val/test,
-    and writes three JSON files to data/processed/.
+    End-to-end: reads Flickr8k captions.txt, splits into train/val/test
+    (default 6091 / 1000 / 1000 images), and writes three JSON files to
+    data/processed/.
     """
     captions_path = os.path.join(raw_dir, "captions.txt")
     if not os.path.exists(captions_path):
@@ -100,7 +129,9 @@ def build_and_save_splits(
 
     os.makedirs(out_dir, exist_ok=True)
     image_to_captions = load_captions(captions_path)
-    train_set, val_set, test_set = split_dataset(image_to_captions, seed=seed)
+    train_set, val_set, test_set = split_dataset(
+        image_to_captions, seed=seed, val_size=val_size, test_size=test_size
+    )
 
     save_split(image_to_captions, train_set, os.path.join(out_dir, "train_captions.json"))
     save_split(image_to_captions, val_set, os.path.join(out_dir, "val_captions.json"))
@@ -108,4 +139,13 @@ def build_and_save_splits(
 
 
 if __name__ == "__main__":
-    build_and_save_splits()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Build image-level train/val/test splits.")
+    parser.add_argument("--raw_dir", default="data/raw")
+    parser.add_argument("--out_dir", default="data/processed")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--val_size", type=int, default=1000)
+    parser.add_argument("--test_size", type=int, default=1000)
+    a = parser.parse_args()
+    build_and_save_splits(a.raw_dir, a.out_dir, a.seed, a.val_size, a.test_size)
