@@ -32,11 +32,10 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from src.tokenizer import CaptionTokenizer  # noqa: E402
 from src.dataset import encode_split, CaptionBatches  # noqa: E402
 from src.feature_extraction import load_features  # noqa: E402
-from src.utils.run_io import run_dir, load_trained_model, write_json, read_json  # noqa: E402
+from src.utils.run_io import run_dir, load_trained_model, write_json, read_json, feature_mode  # noqa: E402
 from src.utils.beam_search import CaptionGenerator  # noqa: E402
 from src import evaluation as ev  # noqa: E402
 
-FEATURE_MODE = {"frozen": "pooled", "finetune": "conv4", "grid": "grid"}
 
 
 def parse_decoding(name: str) -> int:
@@ -119,7 +118,7 @@ def main():
         refs = dict(sorted(refs.items())[:args.limit])
     names = sorted(refs)
 
-    feats, name_to_row = load_features(args.features_dir, FEATURE_MODE[cfg["encoder_mode"]])
+    feats, name_to_row = load_features(args.features_dir, feature_mode(cfg))
     img_feats = np.asarray(feats[[name_to_row[n] for n in names]], np.float32)
 
     print(f"=== Evaluating {args.config_name} seed {args.seed} on {len(names)} {args.split} images ===")

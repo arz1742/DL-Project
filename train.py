@@ -42,9 +42,8 @@ from src.dataset import encode_split, CaptionBatches  # noqa: E402
 from src.feature_extraction import load_features  # noqa: E402
 from src.models.caption_model import compile_caption_model, encoder_and_decoder, count_params  # noqa: E402
 from src.utils.run_io import (load_config, run_dir, read_json, write_json,  # noqa: E402
-                              build_model_from_config)
+                              build_model_from_config, feature_mode)
 
-FEATURE_MODE = {"frozen": "pooled", "finetune": "conv4", "grid": "grid"}
 
 
 class RunTracker(keras.callbacks.Callback):
@@ -153,7 +152,7 @@ def main():
 
     # ---- data ----
     tokenizer = CaptionTokenizer.load(os.path.join(args.processed_dir, "tokenizer.json"))
-    feats, name_to_row = load_features(args.features_dir, FEATURE_MODE[cfg["encoder_mode"]],
+    feats, name_to_row = load_features(args.features_dir, feature_mode(cfg),
                                        mmap=cfg["encoder_mode"] != "frozen")
     with open(os.path.join(args.processed_dir, "train_captions.json")) as f:
         train_caps = select_train_images(json.load(f), cfg["train_fraction"])

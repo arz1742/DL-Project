@@ -126,6 +126,9 @@ Every run writes to `runs/<config>/seed<N>/` (config, history, best/last weights
 | A2 | `transformer` | 3-block Transformer decoder | frozen ResNet50, 7×7 regions |
 | — | `blip_base`, `blip_large` | pretrained BLIP (2022), no training | — |
 
+**Encoder comparison** (hybrid decoder, frozen encoder, 3 seeds): `hybrid_vgg16` (VGG16, 2014),
+`hybrid_frozen` (ResNet50, 2015) and `hybrid_clip` (CLIP ViT-B/32, 2021) — does the encoder matter more than the decoder?
+
 The attention models produce a 7×7 heatmap for every word they write, showing where in the photo they looked.
 
 Each core config runs with **3 seeds** so differences can be reported as mean ± std.

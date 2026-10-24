@@ -17,9 +17,9 @@ import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from src.tokenizer import CaptionTokenizer  # noqa: E402
-from src.utils.run_io import run_dir, load_trained_model  # noqa: E402
+from src.utils.run_io import run_dir, load_trained_model, feature_mode  # noqa: E402
 from src.utils.beam_search import CaptionGenerator  # noqa: E402
-from src.feature_extraction import build_resnet50_extractor, load_and_preprocess  # noqa: E402
+from src.feature_extraction import ImageFeaturizer  # noqa: E402
 
 
 class Captioner:
@@ -28,12 +28,11 @@ class Captioner:
     def __init__(self, rdir: str, processed_dir: str = "data/processed"):
         self.tokenizer = CaptionTokenizer.load(os.path.join(processed_dir, "tokenizer.json"))
         self.model, self.cfg = load_trained_model(rdir, self.tokenizer.vocab_size, processed_dir)
-        mode = {"frozen": "pooled", "finetune": "conv4", "grid": "grid"}[self.cfg["encoder_mode"]]
-        self.extractor = build_resnet50_extractor(mode)
+        self.extractor = ImageFeaturizer(feature_mode(self.cfg))
         self.gen = CaptionGenerator(self.model, self.tokenizer, self.cfg["max_length"])
 
     def state(self, image_path: str) -> np.ndarray:
-        feat = self.extractor.predict_on_batch(load_and_preprocess(image_path)[None])
+        feat = self.extractor([image_path])
         return self.gen.encode_images(feat)[0]
 
     def caption(self, image_path: str, beam_width: int = 5) -> str:

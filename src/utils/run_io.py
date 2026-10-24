@@ -41,7 +41,17 @@ DEFAULTS = {
     "transformer_layers": 3,        # Transformer only
     "transformer_heads": 4,
     "transformer_ff_dim": 1024,
+    "features": None,               # frozen only: pooled (ResNet50, default) | vgg16 | clip
 }
+
+
+def feature_mode(cfg: dict) -> str:
+    """Which saved feature file a config trains on."""
+    if cfg["encoder_mode"] == "frozen":
+        return cfg.get("features") or "pooled"
+    if cfg.get("features"):
+        raise ValueError("'features' can only be set for encoder_mode: frozen")
+    return {"finetune": "conv4", "grid": "grid"}[cfg["encoder_mode"]]
 
 
 def load_config(path: str, overrides: dict | None = None) -> dict:
@@ -90,6 +100,7 @@ def load_embedding_matrix(cfg: dict, processed_dir: str):
 def build_model_from_config(cfg: dict, vocab_size: int, processed_dir: str = "data/processed",
                             cnn_weights: str | None = "imagenet"):
     from src.models.caption_model import build_caption_model
+    from src.feature_extraction import FEATURE_DIMS
     return build_caption_model(
         vocab_size=vocab_size,
         max_length=cfg["max_length"],
@@ -104,6 +115,7 @@ def build_model_from_config(cfg: dict, vocab_size: int, processed_dir: str = "da
         n_layers=cfg["transformer_layers"],
         n_heads=cfg["transformer_heads"],
         ff_dim=cfg["transformer_ff_dim"],
+        feature_dim=FEATURE_DIMS.get(feature_mode(cfg), 2048),
     )
 
 

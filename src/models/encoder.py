@@ -54,11 +54,15 @@ def build_conv5_head(weights: str | None = "imagenet") -> keras.Model:
 
 
 def build_image_encoder(encoder_mode: str, units: int, dropout: float = 0.5,
-                        cnn_weights: str | None = "imagenet") -> keras.Model:
-    """Image input -> decoder initial state vector of size `units`."""
-    bridge = build_bridge_layer(units, dropout=dropout)
+                        cnn_weights: str | None = "imagenet", feature_dim: int = 2048) -> keras.Model:
+    """
+    Image input -> decoder initial state vector of size `units`.
+    feature_dim: size of the precomputed vector for frozen mode (2048 ResNet50,
+    512 VGG16 or CLIP).
+    """
     if encoder_mode == "frozen":
-        img = keras.Input(shape=(2048,), name="image_input")
+        bridge = build_bridge_layer(units, feature_dim=feature_dim, dropout=dropout)
+        img = keras.Input(shape=(feature_dim,), name="image_input")
         state = bridge(img)
     elif encoder_mode == "grid":
         img = keras.Input(shape=(7, 7, 2048), name="image_input")
@@ -69,6 +73,7 @@ def build_image_encoder(encoder_mode: str, units: int, dropout: float = 0.5,
         x = layers.LayerNormalization(name="region_norm")(x)
         state = layers.Dropout(dropout, name="region_dropout")(x)
     elif encoder_mode == "finetune":
+        bridge = build_bridge_layer(units, dropout=dropout)
         img = keras.Input(shape=(14, 14, 1024), name="image_input")
         # training=False keeps BatchNorm on its ImageNet statistics;
         # gradients still flow into the conv kernels.

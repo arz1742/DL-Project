@@ -33,6 +33,7 @@ LABELS = {
     "gru_finetuned": "C5 GRU, fine-tuned", "hybrid_finetuned": "C6 Hybrid LSTM→GRU, fine-tuned",
     "paper_protocol": "Paper-protocol replication",
     "attention": "A1 LSTM + soft attention", "transformer": "A2 Transformer decoder",
+    "hybrid_vgg16": "Hybrid + VGG16 (2014)", "hybrid_clip": "Hybrid + CLIP ViT-B/32 (2021)",
     "blip_base": "BLIP-base (pretrained, 2022)", "blip_large": "BLIP-large (pretrained, 2022)",
 }
 # Kavitha & Karpagam (2025), Tables 2 and 3
@@ -110,6 +111,26 @@ def table_d(df: pd.DataFrame, decoding: str) -> str:
     return "\n".join(lines)
 
 
+def table_f(df: pd.DataFrame, decoding: str) -> str:
+    """Encoder comparison: same hybrid decoder, frozen encoder, different image features."""
+    cols = ["bleu1", "bleu4", "meteor", "cider", "key_object_recall"]
+    rows = [("hybrid_vgg16", "VGG16", "2014"), ("hybrid_frozen", "ResNet50", "2015"),
+            ("hybrid_clip", "CLIP ViT-B/32", "2021")]
+    lines = ["| Encoder | Year | Seeds | " + " | ".join(c.replace("_", " ") for c in cols) + " |",
+             "|" + " --- |" * (len(cols) + 3)]
+    for cfg, name, year in rows:
+        sub = df[(df.config == cfg) & (df.decoding == decoding)]
+        if not sub.empty:
+            lines.append(f"| {name} | {year} | {sub.seed.nunique()} | "
+                         + " | ".join(mean_std(sub, c) for c in cols) + " |")
+    dec_range = df[df.config.isin(["lstm_frozen", "gru_frozen", "hybrid_frozen"]) & (df.decoding == decoding)]
+    if not dec_range.empty:
+        m = dec_range.groupby("config")["cider"].mean()
+        lines.append(f"\nFor comparison, changing the DECODER (LSTM / GRU / hybrid, ResNet50 frozen) moves "
+                     f"CIDEr by {m.max() - m.min():.3f}.")
+    return "\n".join(lines)
+
+
 def best_core_config(df: pd.DataFrame, decoding: str) -> str | None:
     sub = df[df.config.isin(CORE) & (df.decoding == decoding)]
     if sub.empty:
@@ -177,6 +198,8 @@ def main():
                                + table_a(df, args.decoding),
         "table_B_accuracy.md": f"# Table B: The accuracy illusion ({args.decoding})\n\n" + table_b(df, args.decoding),
         "table_C_decoding.md": "# Table C: Greedy vs beam search (BLEU-1, frozen encoders)\n\n" + table_c(df),
+        "table_F_encoders.md": f"# Table F: Encoder comparison, hybrid decoder ({args.decoding})\n\n"
+                               + table_f(df, args.decoding),
         "table_D_attention.md": f"# Table D: Part 2, attention and pretrained models ({args.decoding})\n\n"
                                 + table_d(df, args.decoding),
     }

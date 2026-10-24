@@ -30,6 +30,7 @@ STAGES = {
     "finetuned": ["lstm_finetuned", "gru_finetuned", "hybrid_finetuned"],
     "paper": ["paper_protocol"],
     "attention": ["attention", "transformer"],   # Part 2, needs --mode grid features
+    "encoders": ["hybrid_clip", "hybrid_vgg16"],  # needs --mode clip / vgg16 features
 }
 
 

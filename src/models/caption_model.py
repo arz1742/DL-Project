@@ -33,6 +33,7 @@ def build_caption_model(
     n_layers: int = 3,
     n_heads: int = 4,
     ff_dim: int = 1024,
+    feature_dim: int = 2048,
 ) -> keras.Model:
     """
     max_length is the length of an encoded caption including <start>/<end>
@@ -40,7 +41,7 @@ def build_caption_model(
     sequence length is max_length - 1.
     """
     seq_len = max_length - 1
-    encoder = build_image_encoder(encoder_mode, units, dropout, cnn_weights)
+    encoder = build_image_encoder(encoder_mode, units, dropout, cnn_weights, feature_dim)
     from src.models.decoders import ATTENTION_DECODERS
     if (decoder_type in ATTENTION_DECODERS) != (encoder_mode == "grid"):
         raise ValueError(f"decoder {decoder_type!r} needs encoder_mode 'grid'; classic decoders "

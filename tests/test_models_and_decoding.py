@@ -108,3 +108,21 @@ def test_classic_models_have_no_attention_maps():
 def test_decoder_encoder_mismatch_is_rejected():
     with pytest.raises(ValueError):
         build_caption_model(30, 12, "attention", "frozen", cnn_weights=None)
+
+
+def test_frozen_model_accepts_512_d_features_for_clip_and_vgg16():
+    tok = _tok()
+    m = build_caption_model(tok.vocab_size, 12, "hybrid", "frozen", units=32, embedding_dim=32,
+                            feature_dim=512, cnn_weights=None)
+    out = m.predict([np.random.rand(2, 512).astype("float32"), np.zeros((2, 11), "int32")], verbose=0)
+    assert out.shape == (2, 11, tok.vocab_size)
+
+
+def test_feature_mode_from_config():
+    from src.utils.run_io import DEFAULTS, feature_mode
+    assert feature_mode({**DEFAULTS, "encoder_mode": "frozen"}) == "pooled"
+    assert feature_mode({**DEFAULTS, "encoder_mode": "frozen", "features": "clip"}) == "clip"
+    assert feature_mode({**DEFAULTS, "encoder_mode": "finetune"}) == "conv4"
+    assert feature_mode({**DEFAULTS, "encoder_mode": "grid"}) == "grid"
+    with pytest.raises(ValueError):
+        feature_mode({**DEFAULTS, "encoder_mode": "grid", "features": "clip"})
