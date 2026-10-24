@@ -19,13 +19,14 @@ models trained only on 6,091 Flickr8k images. Needs PyTorch + transformers
 import os
 import sys
 import json
+import faulthandler
 import time
 import argparse
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, ROOT)
 
-from evaluate import score_captions, print_summary, write_outputs  # noqa: E402
+from src.scoring import score_captions, print_summary, write_outputs  # noqa: E402  (no TensorFlow)
 from src.utils.run_io import run_dir, write_json  # noqa: E402
 
 MODELS = {"base": "Salesforce/blip-image-captioning-base",
@@ -56,6 +57,7 @@ def blip_captions(image_paths: list[str], model_id: str, batch_size: int = 32, n
 
 
 def main():
+    faulthandler.enable()  # a hard crash prints where it happened instead of dying silently
     p = argparse.ArgumentParser()
     p.add_argument("--model", choices=list(MODELS), default="base")
     p.add_argument("--image_dir", default="data/raw/Images")
@@ -84,6 +86,7 @@ def main():
     caps = blip_captions([os.path.join(args.image_dir, n) for n in names], MODELS[args.model],
                          num_beams=args.num_beams)
     secs = time.time() - t0
+    print(f"Captioned {len(caps)} images in {secs:.0f}s, e.g. {names[0]}: \"{caps[0]}\". Scoring...")
     hyps = dict(zip(names, caps))
 
     dec = f"beam{args.num_beams}"
