@@ -188,14 +188,22 @@ def gradcam_maps(model, grid: np.ndarray, caption: str, tokenizer, max_length: i
 
 
 # --------------------------------------------------------------------------- drawing
+def _fit(image, longest: int = 256):
+    """RGB copy of `image` with its longest side = `longest`, aspect ratio kept."""
+    image = image.convert("RGB")
+    w, h = image.size
+    scale = longest / max(w, h)
+    return image.resize((max(1, round(w * scale)), max(1, round(h * scale))))
+
+
 def overlay(ax, image, att_map, title: str = "", alpha: float = 0.55):
-    """Shows `image` with a 7x7 map upsampled and laid over it."""
+    """Shows `image` (aspect ratio kept) with a 7x7 map upsampled and laid over it."""
     from PIL import Image
 
-    img = np.asarray(image.convert("RGB").resize((224, 224)))
+    img = _fit(image)
     m = np.asarray(Image.fromarray((att_map / att_map.max() * 255).astype(np.uint8))
-                   .resize((224, 224), Image.BICUBIC), np.float32) / 255
-    ax.imshow(img)
+                   .resize(img.size, Image.BICUBIC), np.float32) / 255
+    ax.imshow(np.asarray(img))
     ax.imshow(m, cmap="inferno", alpha=alpha, vmin=0, vmax=1)
     ax.set_title(title, fontsize=11)
     ax.axis("off")
@@ -208,8 +216,10 @@ def word_strip(image, maps: list[dict], caption_label: str, path: str, max_words
     import matplotlib.pyplot as plt
 
     maps = maps[:max_words]
-    fig, axes = plt.subplots(1, len(maps) + 1, figsize=(2.2 * (len(maps) + 1), 2.6))
-    axes[0].imshow(np.asarray(image.convert("RGB").resize((224, 224))))
+    w, h = _fit(image).size
+    panel_w = 2.4 * w / max(w, h)
+    fig, axes = plt.subplots(1, len(maps) + 1, figsize=(panel_w * (len(maps) + 1), 2.4 * h / max(w, h) + 0.6))
+    axes[0].imshow(np.asarray(_fit(image)))
     axes[0].set_title("photo", fontsize=11)
     axes[0].axis("off")
     for ax, mp in zip(axes[1:], maps):
