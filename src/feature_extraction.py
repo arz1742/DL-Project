@@ -110,9 +110,14 @@ class ClipFeaturizer:
         from PIL import Image
 
         images = [Image.open(p).convert("RGB") for p in paths]
-        inputs = self.processor(images=images, return_tensors="pt").to(self.device)
+        pixels = self.processor(images=images, return_tensors="pt")["pixel_values"].to(self.device)
         with self.torch.no_grad():
-            feats = self.model.get_image_features(**inputs)
+            # Same as CLIPModel.get_image_features, spelled out because its
+            # return type changed between transformers versions (tensor in v4,
+            # an output object in v5).
+            vision = self.model.vision_model(pixel_values=pixels)
+            pooled = vision.pooler_output if hasattr(vision, "pooler_output") else vision[1]
+            feats = self.model.visual_projection(pooled)
         return feats.float().cpu().numpy()
 
 
