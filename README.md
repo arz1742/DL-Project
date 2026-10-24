@@ -220,5 +220,4 @@ into 6,091 / 1,000 / 1,000 for training, validation and testing.
 
 ## Acknowledgements
 
-Prepared for the **Deep Learning** course (702AI0C008) at **SVKM's NMIMS, Mukesh Patel School of Technology
-Management & Engineering**, Mumbai. Released under the [MIT License](LICENSE).
+Released under the [MIT License](LICENSE).
