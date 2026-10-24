@@ -74,7 +74,9 @@ def mean_std(df: pd.DataFrame, col: str) -> str:
     v = df[col].dropna()
     if v.empty:
         return "—"
-    return f"{v.mean():.4f} ± {v.std(ddof=1):.4f}" if len(v) > 1 else f"{v.mean():.4f}"
+    if col.endswith("_pct"):
+        return f"{v.mean():.1f}% ± {v.std(ddof=1):.1f}" if len(v) > 1 else f"{v.mean():.1f}%"
+    return f"{v.mean():.3f} ± {v.std(ddof=1):.3f}" if len(v) > 1 else f"{v.mean():.3f}"
 
 
 def table_a(df: pd.DataFrame, decoding: str) -> str:
